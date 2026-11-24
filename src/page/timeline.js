@@ -16,6 +16,13 @@ export function atTime(events, time) {
 // Point IDs come from the log. The dump is the only place without a drawpoint ID.
 export const DUMP = -1
 
+export function routeFraction(frame, time) {
+  const start = frame.fraction ?? 0
+  if (frame.state === 'stopped') return start
+  const progress = frame.until > frame.time ? Math.min(1, Math.max(0, (time - frame.time) / (frame.until - frame.time))) : 1
+  return start + (1 - start) * progress
+}
+
 export function buildTimeline(shift) {
   const loaders = shift.loaders.map(() => [])
   const departures = []
@@ -60,6 +67,29 @@ export function buildTimeline(shift) {
         break
       case 'waitingOperator':
       case 'waitingDrawpoint': parked(type); break
+      case 'autoStop': {
+        const travel = loader.at(-1)
+        loader.push({ ...travel, time, state: 'stopped', fraction: routeFraction(travel, time) })
+        queue.push('reset loader ' + (id + 1))
+        queueChanged = true
+        break
+      }
+      case 'resetStarted':
+        serve('reset loader ' + (id + 1))
+        operator = 'resetting loader ' + (id + 1)
+        break
+      case 'resumed': {
+        const frozen = loader.at(-1)
+        departures[id] = { ...departures[id], returnsAt: e.returnsAt }
+        loader.push({ ...frozen, time, state: 'driving', until: frozen.to === DUMP ? e.dumpsAt : e.returnsAt })
+        operator = 'idle'
+        break
+      }
+      case 'takeoverStarted':
+        serve(id + 1)
+        operator = 'taking control of loader ' + (id + 1)
+        parked('filling')
+        break
       case 'fillStarted':
         serve(id + 1)
         operator = 'filling loader ' + (id + 1)
@@ -67,7 +97,7 @@ export function buildTimeline(shift) {
         break
       case 'hangUp':
         serve(id + 1)
-        operator = 'clearing a hang-up at DP' + (point + 1)
+        operator = 'clearing a hang-up at Brow ' + (point + 1)
         hangUps.push(e)
         parked('blocked')
         break

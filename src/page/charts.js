@@ -7,10 +7,10 @@ export const tonnes = value => number(Math.round(value / 10) * 10)
 export const share = fraction => number(100 * fraction) + '%'
 const accounts = [
   ['driving', 'Driving', '#267562'], ['filling', 'Filling', '#304e70'],
-  ['waitingOperator', 'Waiting for operator', '#c38742'], ['waitingDrawpoint', 'Waiting for a drawpoint', '#a7bcd0'],
-  ['blocked', 'Blocked by hang-up', '#a65039'], ['idle', 'Idle', '#b9c4bd']
+  ['waitingOperator', 'Waiting for operator', '#c38742'], ['waitingDrawpoint', 'Waiting for a brow', '#a7bcd0'],
+  ['blocked', 'Blocked by hang-up', '#a65039'], ['stopped', 'Stopped for reset', '#81629a'], ['idle', 'Idle', '#b9c4bd']
 ]
-const duties = [accounts[1], ['clearing', 'Clearing hang-ups', '#a65039'], ['otherDuties', 'Other duties', '#c38742']]
+const duties = [accounts[1], ['takeover', 'Takeover', '#567d96'], ['resets', 'Resets', '#81629a'], ['clearing', 'Clearing hang-ups', '#a65039'], ['otherDuties', 'Other duties', '#c38742']]
 
 export function mark(parent, tag, attrs = {}, text) {
   const node = document.createElementNS(svgNS, tag)
@@ -81,7 +81,11 @@ function production(series, width) {
         fill: color, stroke: '#fff', 'stroke-width': 1.5 })
       mark(dot, 'title', {}, `Blast ${i + 1}, ${r.N} loaders, ${tonnes(r.mean)} tonnes per shift`)
     }
-    if (knee == null) {
+    if (results.every(r => r.mean === 0)) {
+      html(notes, 'p', `Blast ${i + 1}: no tonnes bogged at these fleet sizes`)
+    } else if (knee == null && results.some(r => r.mean === 0)) {
+      html(notes, 'p', `Blast ${i + 1}: the tested fleets do not establish a limit`)
+    } else if (knee == null) {
       html(notes, 'p', `Blast ${i + 1}: every extra loader up to ${counts.at(-1)} still adds 10% or more`)
     } else {
       const row = results.find(r => r.N === knee)
@@ -150,5 +154,7 @@ export function drawCharts(series, params) {
   const gain = next.mean - row.mean
   const answer = byId('answer')
   answer.hidden = false
-  answer.textContent = `With Blast ${i + 1}, the operator is busy ${share(row.operatorBusyShare)} of the shift at ${row.N} ${row.N === 1 ? 'loader' : 'loaders'}. Going to ${next.N} ${gain < 0 ? 'reduces' : 'increases'} mean production by ${tonnes(Math.abs(gain))} tonnes per shift.`
+  const change = Math.abs(gain) < 5 ? 'changes mean production by less than 10 tonnes' :
+    (gain < 0 ? 'reduces' : 'increases') + ' mean production by ' + tonnes(Math.abs(gain)) + ' tonnes'
+  answer.textContent = `With Blast ${i + 1}, the operator is busy ${share(row.operatorBusyShare)} of the shift at ${row.N} ${row.N === 1 ? 'loader' : 'loaders'}. Going to ${next.N} ${change} per shift.`
 }

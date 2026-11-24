@@ -6,6 +6,12 @@ export function costCheck(blast1, blast2, results, { inSituDensity, explosivePri
   const extraCostPerTonne = costs[high] - costs[low]
   const extraTonnes = results[high] - results[low]
   const extraExplosiveCost = extraCostPerTonne * results[high]
-  const netValue = extraTonnes * valuePerTonne - extraExplosiveCost
-  return { costs, extraCostPerTonne, extraTonnes, extraExplosiveCost, netValue, paysBack: netValue > 0 }
+  const breakEvenValuePerTonne = extraTonnes > 0 ? extraExplosiveCost / extraTonnes : null
+  const result = { costs, extraCostPerTonne, extraTonnes, extraExplosiveCost, breakEvenValuePerTonne }
+  // Preserve v1 API results for callers that explicitly supply a tonne value.
+  if (Number.isFinite(valuePerTonne)) {
+    result.netValue = extraTonnes * valuePerTonne - extraExplosiveCost
+    result.paysBack = result.netValue > 0
+  }
+  return result
 }

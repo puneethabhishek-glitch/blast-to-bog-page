@@ -1,5 +1,5 @@
-export function deterministicBucketsPerHour(N, F, A) {
-  return 3600 * Math.min(N / (F + A), 1 / F)
+export function deterministicBucketsPerHour(N, F, A, T = 0) {
+  return 3600 * Math.min(N / (F + T + A), 1 / (F + T))
 }
 
 export function machineInterference(N, F, A) {

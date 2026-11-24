@@ -3,8 +3,10 @@ import { createRng, exponential, lognormalSampler, nextPoissonArrival } from './
 import { autonomousTime, tonnesPerBucket } from './loader.js'
 import { EventQueue } from './event-queue.js'
 
-const timeAccounts = ['filling', 'driving', 'waitingOperator', 'waitingDrawpoint', 'blocked', 'idle']
-const emptyTimes = () => ({ filling: 0, driving: 0, waitingOperator: 0, waitingDrawpoint: 0, blocked: 0, idle: 0 })
+const emptyTimes = () => ({ filling: 0, driving: 0, waitingOperator: 0, waitingDrawpoint: 0, blocked: 0, stopped: 0, idle: 0 })
+const timeAccounts = Object.keys(emptyTimes())
+const emptyOperator = () => ({ filling: 0, clearing: 0, otherDuties: 0, takeover: 0, resets: 0 })
+const operatorAccounts = Object.keys(emptyOperator())
 
 function sampler(distribution, mean, cv) {
   if (distribution === 'fixed') return () => mean
@@ -43,7 +45,8 @@ function shift(config, N, seed, record) {
   let freeCount = p.drawpoints
   const jobs = [] // Loader objects and null duty jobs in FCFS order.
   const awaitingPoint = [] // New arrivals and stranded rockbreaker loaders, in arrival order.
-  const operator = { filling: 0, clearing: 0, otherDuties: 0 }
+  const operator = emptyOperator()
+  const stopRate = p.autoStopsPerHour / 3600
   const dutySeconds = p.dutyBlockMinutes * 60
   const dutyRate = p.dutyShare / dutySeconds
   let busy = p.handoverMinutes > 0
@@ -90,7 +93,7 @@ function shift(config, N, seed, record) {
     freeCount++
     if (freeCount === 1) {
       // Already-admitted jobs retain their queue rank across a point closure.
-      for (const l of jobs) if (l) {
+      for (const l of jobs) if (l && l.state !== 'stopped') {
         l.point = point
         state(l, 'waitingOperator')
         log('waitingOperator', l)
@@ -109,10 +112,33 @@ function shift(config, N, seed, record) {
     log('fillStarted', l)
     schedule(now + duration, 'filled', l)
   }
+  function takeControl(l, next) {
+    state(l, 'filling')
+    operator.takeover += Math.min(p.takeoverSeconds, end - now)
+    log('takeoverStarted', l)
+    schedule(now + p.takeoverSeconds, next, l)
+  }
+  function attempt(l) {
+    if (p.hangUpsPer100 > 0 && rng() * 100 < p.hangUpsPer100) {
+      const duration = p.clearMinutes * 60
+      hangUps++
+      state(l, 'blocked')
+      operator.clearing += Math.min(duration, end - now)
+      log('hangUp', l)
+      schedule(now + duration, 'cleared', l)
+    } else startFill(l)
+  }
+  // Only schedule uninterrupted travel. No stale dump/return can fire during a stop.
+  function travel(l) {
+    const stopAt = nextPoissonArrival(rng, now, stopRate)
+    if (!l.dumped && l.dumpsAt <= stopAt) schedule(l.dumpsAt, 'dumped', l)
+    if (stopAt < l.returnsAt) schedule(stopAt, 'autoStop', l)
+    else schedule(l.returnsAt, 'returned', l)
+  }
   function dispatch() {
     if (busy || !jobs.length) return
-    // A blocked point cannot prevent a duty from being served.
-    const i = freeCount ? 0 : jobs.indexOf(null)
+    // Resets and other duties can proceed even when every brow is closed.
+    const i = freeCount ? 0 : jobs.findIndex(job => job === null || job.state === 'stopped')
     if (i < 0) return
     const job = i === 0 ? jobs.shift() : jobs.splice(i, 1)[0]
     busy = true
@@ -122,25 +148,24 @@ function shift(config, N, seed, record) {
       schedule(now + dutySeconds, 'dutyDone')
       return
     }
+    if (job.state === 'stopped') {
+      const duration = p.autoStopResetMinutes * 60
+      operator.resets += Math.min(duration, end - now)
+      log('resetStarted', job, null)
+      schedule(now + duration, 'resumed', job)
+      return
+    }
     job.point = firstFree(job.point)
     free[job.point] = false
     freeCount--
     if (!freeCount) {
-      for (const l of jobs) if (l) {
+      for (const l of jobs) if (l && l.state !== 'stopped') {
         state(l, 'waitingDrawpoint')
         log('waitingDrawpoint', l)
       }
     }
-    if (p.hangUpsPer100 > 0 && rng() * 100 < p.hangUpsPer100) {
-      const duration = p.clearMinutes * 60
-      hangUps++
-      state(job, 'blocked')
-      operator.clearing += Math.min(duration, end - now)
-      log('hangUp', job)
-      schedule(now + duration, 'cleared', job)
-    } else {
-      startFill(job)
-    }
+    if (p.takeoverSeconds) takeControl(job, 'attempt')
+    else attempt(job)
   }
 
   if (busy) {
@@ -164,10 +189,17 @@ function shift(config, N, seed, record) {
         log('dutyQueued')
         schedule(nextPoissonArrival(rng, now, dutyRate), 'duty')
         break
+      case 'attempt':
+        attempt(l)
+        break
+      case 'fillAfterClear':
+        startFill(l)
+        break
       case 'cleared':
         if (rng() >= p.rockbreakerShare) {
           log('cleared', l)
-          startFill(l) // Same operator, no further hang-up draw for this fill.
+          if (p.takeoverSeconds) takeControl(l, 'fillAfterClear')
+          else startFill(l) // Retain the operator, with no new hang-up draw.
           break
         }
         rockbreakers++
@@ -196,12 +228,30 @@ function shift(config, N, seed, record) {
         const dumpsAt = now + duration * dumpFraction
         const returnsAt = now + duration
         if (record) log('departedLoaded', l, l.point, { dumpsAt, returnsAt, returnPoint: l.home })
-        schedule(dumpsAt, 'dumped', l)
-        schedule(returnsAt, 'returned', l)
+        l.dumpsAt = dumpsAt
+        l.returnsAt = returnsAt
+        l.dumped = false
+        travel(l)
         release(l.point)
         break
       }
+      case 'autoStop':
+        state(l, 'stopped')
+        log('autoStop', l, null)
+        jobs.push(l)
+        break
+      case 'resumed': {
+        busy = false
+        const delay = now - l.since
+        if (!l.dumped) l.dumpsAt += delay
+        l.returnsAt += delay
+        state(l, 'driving')
+        if (record) log('resumed', l, null, { dumpsAt: l.dumpsAt, returnsAt: l.returnsAt })
+        travel(l)
+        break
+      }
       case 'dumped':
+        l.dumped = true
         l.buckets++
         buckets++
         if (record) log('dumped', l, l.point, { buckets, tonnes: buckets * payload })
@@ -244,22 +294,22 @@ export function runMonteCarlo(params, Nlist, shifts = params?.shifts ?? defaults
   const results = counts.map(N => {
     checkCount(N)
     let sum = 0
-    const operatorShares = { filling: 0, clearing: 0, otherDuties: 0 }
+    const operatorShares = emptyOperator()
     const tonnes = []
     const meanTime = emptyTimes()
     for (const shiftSeed of seeds) {
       const result = shift(config, N, shiftSeed, false)
       tonnes.push(result.tonnes)
       sum += result.tonnes
-      for (const key of Object.keys(operatorShares)) operatorShares[key] += result.operator[key]
+      for (const key of operatorAccounts) operatorShares[key] += result.operator[key]
       for (const l of result.loaders) {
         for (const key of timeAccounts) meanTime[key] += l[key]
       }
     }
     tonnes.sort((a, b) => a - b)
     for (const key of timeAccounts) meanTime[key] /= shifts * N
-    for (const key of Object.keys(operatorShares)) operatorShares[key] /= shifts * config.end
-    const operatorBusyShare = operatorShares.filling + operatorShares.clearing + operatorShares.otherDuties
+    for (const key of operatorAccounts) operatorShares[key] /= shifts * config.end
+    const operatorBusyShare = operatorAccounts.reduce((sum, key) => sum + operatorShares[key], 0)
     return { N, mean: sum / shifts, p10: percentile(tonnes, 0.1), p50: percentile(tonnes, 0.5),
       p90: percentile(tonnes, 0.9), meanTime, operatorShares, operatorBusyShare }
   })

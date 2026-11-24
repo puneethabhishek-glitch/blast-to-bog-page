@@ -51,6 +51,26 @@
       <div id="production-chart"></div><div id="knees"></div>
       <p id="answer" class="answer" hidden></p>
     </section>
+    <section class="panel" id="capacity-map" aria-labelledby="map-title">
+      <div class="heading"><h2 id="map-title">How many loaders can one operator run?</h2><span id="map-progress"></span></div>
+      <p class="muted">Each number is the fleet size before the next loader adds under 10% to mean tonnes. At 6+ the sixth loader still adds at least 10%.</p>
+      <div class="map-layout">
+        <div><p class="map-axis">Hang-ups per 100 buckets</p>
+          <div class="map-plot">
+            <div id="map-y" aria-hidden="true"></div>
+            <div class="map-field"><div id="map-grid" role="group" aria-label="Operator capacity by fill time and hang-up rate"></div><div id="map-markers"></div></div>
+            <div id="map-x" aria-hidden="true"></div>
+          </div>
+          <p class="axis-title">Fill time (seconds)</p>
+          <div id="map-blasts" class="legend"></div>
+          <p id="map-note" class="muted"></p>
+        </div>
+        <div class="map-detail"><h3 id="map-detail-title"></h3>
+          <table aria-labelledby="map-detail-title"><thead><tr><th>Loaders</th><th>Mean t/shift</th><th>Operator busy</th></tr></thead><tbody id="map-detail-rows"></tbody></table>
+        </div>
+      </div>
+      <p id="map-answer" class="answer" hidden></p>
+    </section>
     <section class="panel replay" id="replay" aria-labelledby="replay-title">
       <div class="heading"><h2 id="replay-title">Watch one shift</h2><div id="replay-picker"></div></div>
       <p id="queue-takeaway" class="answer" hidden></p>
@@ -68,7 +88,7 @@
       <div class="legend replay-legend">
         <span><i class="swatch filling"></i>Filling</span><span><i class="swatch driving"></i>Driving</span>
         <span><i class="swatch waitingOperator"></i>Waiting for operator</span>
-        <span><i class="swatch waitingDrawpoint"></i>Waiting for drawpoint</span><span><i class="swatch blocked"></i>Blocked</span>
+        <span><i class="swatch waitingDrawpoint"></i>Waiting for a brow</span><span><i class="swatch blocked"></i>Blocked</span><span><i class="swatch stopped"></i>Stopped for reset</span>
       </div>
       <div class="pair" id="plans"></div>
       <p class="muted" id="replay-note"></p>
@@ -81,18 +101,20 @@
       <p id="cost-direction" class="muted"></p><dl id="cost-values" class="metrics"></dl>
       <p class="muted">Powder factor here only sets explosive cost. It changes fragmentation only in the rough guide mode.</p>
       <p id="payback" class="answer" hidden></p>
-      <p class="muted">Explosive price, rock density and the value of a tonne are your own numbers. Change them in the inputs.</p>
+      <p class="muted">Explosive price and rock density are your own numbers. Change them in the inputs.</p>
       <div id="cost-inputs" class="fields"></div>
     </section>
     <details class="panel"><summary>Assumptions</summary><p>V = verified from a public source, C = calibrated, A = assumed.</p><div id="assumptions"></div></details>
     <details class="panel prose"><summary>How it works</summary>
-      <h3>The loader cycle</h3><p>One operator fills buckets in queue order. A loaded machine trams to the dump, empties its bucket and returns on its own. A bucket adds tonnes when it is dumped. A hang-up ties up the operator during clearing. If it needs a rockbreaker, the affected drawpoint closes and the loader waits or relocates.</p>
-      <h3>Two exact checks</h3><p>N is the loader count, F is mean fill time and A is mean autonomous trip time, both in seconds. With fixed times the fleet rate is limited by the loader cycles and the operator's filling rate.</p>
-      <p class="formula">Buckets per hour = 3,600 × min(N / (F + A), 1 / F)</p>
+      <h3>The loader cycle</h3><p>The level has several stopes open at once and each loader bogs from a stope brow. One operator takes remote control at the brow before each fill and each hang-up clearing attempt. A loaded machine trams to the dump, empties its bucket and returns on its own. A bucket adds tonnes when it is dumped. A hang-up ties up the operator during clearing. If it needs a rockbreaker, the affected brow closes and the loader waits or relocates.</p>
+      <p>Auto-stops can occur during autonomous travel, dumping or positioning. The loader stays in place while its reset waits in the operator queue and during the reset itself. The operator can reset it without an open brow. Set the stop rate and remote takeover time to zero to replay the original timing.</p>
+      <h3>Two exact checks</h3><p>N is the loader count. F, T and A are the mean fill time, remote takeover time and mean autonomous trip time in seconds. With fixed times the fleet rate is limited by the loader cycles and the operator's filling rate.</p>
+      <p class="formula">Buckets per hour = 3,600 × min(N / (F + T + A), 1 / (F + T))</p>
       <p>With exponential times, the machine interference formula gives the probability P₀ that the operator is idle. Set r = F / A and sum over k from 0 to N.</p>
       <p class="formula">P₀ = 1 / Σ [N! / (N − k)! × rᵏ]<br>Utilisation = 1 − P₀<br>Buckets per hour = 3,600 × utilisation / F</p>
-      <p>With enough drawpoints and no hang-ups, handover or other duties, the simulation matches the formula within 1 percent over 20,000 simulated hours for each fleet size.</p>
-      <h3>Fragmentation uncertainty</h3><p class="rough-warning"></p>
+      <p>With enough brows and takeover, auto-stops, hang-ups, handover and other duties turned off, the simulation matches the formula within 1 percent over 20,000 simulated hours for each fleet size.</p>
+      <h3>Fragmentation uncertainty</h3><p>Normal loading time is calibrated to measured semi-autonomous loading at a Swedish sublevel caving mine, and the step to Coarse comes from an open pit study, so both are starting points, not WA stope data. No published hang-up rate for WA longhole stope brows was found, so hang-ups stay assumed.</p>
+      <p class="rough-warning"></p>
       <p>Across 169 bench blasts, the median size estimate was off by about −30% on average. The middle half of errors extended from roughly −75% to +50%. <a href="https://doi.org/10.1007/s00603-016-1131-9">Sanchidrián and Ouchterlony (2017)</a></p>
       <h3>Operating limits</h3><p><strong>Tonnes are a ceiling with no breakdowns.</strong> The model leaves out trucks, a full stockpile, breakdowns, ventilation and blasting re-entry.</p>
     </details>

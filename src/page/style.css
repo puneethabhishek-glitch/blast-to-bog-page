@@ -57,6 +57,36 @@ h3 { font-size: 1.05rem }
 .driving { fill: #267562; background: #267562 }
 .waitingOperator { fill: #865821; background: #865821 }
 .waitingDrawpoint { fill: #526979; background: #526979 }
+.stopped { fill: #74548e; background: #74548e }
+#capacity-map > .muted { margin-top: .4rem }
+#map-progress { font-size: .85rem; color: var(--muted) }
+.map-layout { display: grid; gap: 1.25rem; margin-top: 1rem; align-items: start }
+.map-axis, #map-detail-title { margin-bottom: .45rem; font-weight: 600; font-size: .88rem }
+.map-plot { display: grid; grid-template-columns: 1rem minmax(0,1fr); gap: .2rem; font-variant-numeric: tabular-nums }
+#map-x, #map-grid { display: grid; grid-template-columns: repeat(10,minmax(0,1fr)) }
+#map-x { grid-column: 2; align-items: center; text-align: center }
+#map-x, #map-y { color: var(--muted); font-size: .73rem }
+#map-y { display: grid; grid-template-rows: repeat(7,1fr); align-items: center }
+.map-field { position: relative }
+.capacity-cell { min-height: 2.4rem; border: 1px solid white; border-radius: 3px; background: #f2f4ee; color: #183228; font: 650 .9rem/1 system-ui; cursor: pointer; padding: 0 }
+.capacity-cell[data-limit="1"] { background: #ecefe1 }
+.capacity-cell[data-limit="2"] { background: #c6dac2 }
+.capacity-cell[data-limit="3"] { background: #8bbcb0 }
+.capacity-cell[data-limit="4"] { background: #428078; color: white }
+.capacity-cell[data-limit="5"] { background: #286462; color: white }
+.capacity-cell[data-limit="6+"] { background: #224a50; color: white }
+.capacity-cell[aria-current], .capacity-cell:focus-visible { outline: 2px solid #163b2e; outline-offset: -3px }
+#map-markers { position: absolute; inset: 0; pointer-events: none }
+#map-markers .blast-dot { position: absolute; display: grid; place-items: center; width: .85rem; height: .85rem; border-radius: 100%; color: white; font: bold .57rem/1 system-ui; box-shadow: 0 0 0 1px white }
+#map-markers .blast-1 { background: var(--teal); transform: translate(-95%,-128%) }
+#map-markers .blast-2 { background: var(--clay); transform: translate(-5%,-128%) }
+#map-blasts { gap: .3rem 1rem }
+#map-blasts span::before { content: ''; width: .65rem; height: .65rem; border-radius: 100%; background: var(--teal) }
+#map-blasts .blast-2::before { background: var(--clay) }
+.map-detail { background: #f5f7f3; border-radius: .45rem; padding: .85rem }
+.map-detail th, .map-detail td { text-align: right; font-variant-numeric: tabular-nums }
+.map-detail th:first-child, .map-detail td:first-child { text-align: left }
+@media(min-width:900px) { .map-layout { grid-template-columns: minmax(0,2fr) minmax(15rem,1fr) } }
 .blocked { fill: #a64232; background: #a64232 }
 .plan-status { margin-top: .55rem; font-size: .9rem }
 .plan .metrics { grid-template-columns: repeat(3,minmax(0,1fr)); margin-top: .6rem; padding-top: .55rem }

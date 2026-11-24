@@ -1,7 +1,7 @@
 import { comparisonDefaults, simulateShift } from '../engine/index.js'
 import { byId } from './controls.js'
 import { mark, number, tonnes } from './charts.js'
-import { afterTime, atTime, buildTimeline, DUMP, queueTakeaway } from './timeline.js'
+import { afterTime, atTime, buildTimeline, DUMP, queueTakeaway, routeFraction } from './timeline.js'
 
 function clock(seconds) {
   const minutes = Math.floor(seconds / 60)
@@ -63,7 +63,7 @@ function createPlan(index, timeline, drawpoints, shifts, mean) {
   mark(svg, 'text', { x: dumpX, y: 81 }, 'Dump')
   const faces = [], crosses = []
   for (const [i, x] of points.entries()) {
-    mark(svg, 'text', { x, y: 20 }, 'DP' + (i + 1))
+    mark(svg, 'text', { x, y: 20 }, 'Brow ' + (i + 1))
     faces.push(mark(svg, 'rect', { x: x - 19, y: berthY - 16, width: 38, height: 32, rx: 5, fill: '#d6e2d4', stroke: '#9aac9b' }))
     crosses.push(mark(svg, 'path', { d: `M${x-5} 68 l10 10 m0 -10 l-10 10`, stroke: '#b2242c', 'stroke-width': 4, display: 'none' }))
   }
@@ -87,7 +87,7 @@ function createPlan(index, timeline, drawpoints, shifts, mean) {
         machine.path = paths.get(key)
         move(machine, machine.path, 0)
       }
-      if (machine.path.length) move(machine, machine.path, frame.until > frame.time ? (time - frame.time) / (frame.until - frame.time) : 1)
+      if (machine.path.length) move(machine, machine.path, routeFraction(frame, time))
     }
     const panel = atTime(timeline.panels, time)
     if (panel !== lastPanel) {

@@ -30,14 +30,36 @@ export const loaderOptions = {
   }
 }
 
-export const anchorTable = [
-  { name: 'Fine', x50: 15, fillTime: 45, fillFactor: 0.95, hangUpsPer100: 0.5 },
-  { name: 'Normal', x50: 25, fillTime: 60, fillFactor: 0.90, hangUpsPer100: 1 },
-  { name: 'Coarse', x50: 40, fillTime: 90, fillFactor: 0.80, hangUpsPer100: 3 }
-]
-
-const normal = anchorTable[1]
+const tariq = 'https://doi.org/10.1080/17480930.2025.2496911'
+const tampier = 'https://doi.org/10.3390/app11188718'
+const calibrated = (value, unit, source, sourceUrl) => ({ value, unit, label: 'C', source, sourceUrl })
 const anchorSource = 'Assumed starting values. The main question for site engineers.'
+
+export const anchorDefaults = {
+  Fine: {
+    x50: assumed(15, 'cm', anchorSource),
+    fillTime: assumed(35, 's', anchorSource),
+    fillFactor: assumed(0.95, 'fraction', anchorSource),
+    hangUpsPer100: assumed(0.5, 'events/100 buckets', anchorSource)
+  },
+  Normal: {
+    x50: assumed(25, 'cm', anchorSource),
+    fillTime: calibrated(45, 's', 'Tariq et al. (2025), 21 t semi-autonomous LHDs at Kiirunavaara. Median loading duration 50 s, including takeover.', tariq),
+    fillFactor: calibrated(0.90, 'fraction', 'Tampier et al. (2021), autonomous loading reached about 90% fill.', tampier),
+    hangUpsPer100: assumed(1.0, 'events/100 buckets', anchorSource)
+  },
+  Coarse: {
+    x50: assumed(40, 'cm', anchorSource),
+    fillTime: calibrated(70, 's', 'Normal x 1.56. Cottee (2001) open pit analogue, where finer blasting cut dig time by 36%.'),
+    fillFactor: calibrated(0.82, 'fraction', 'Normal / 1.10. Cottee (2001) open pit analogue, where finer blasting raised payload by 10%.'),
+    hangUpsPer100: assumed(3.0, 'events/100 buckets', anchorSource)
+  }
+}
+
+export const anchorTable = Object.entries(anchorDefaults).map(([name, cells]) => ({
+  name, ...Object.fromEntries(Object.entries(cells).map(([key, cell]) => [key, cell.value]))
+}))
+
 const variability = 'Assumed spread around the mean.'
 const kuzSource = 'Assumed example for the rough guide.'
 const machine = loaderOptions.LH621i
@@ -54,12 +76,13 @@ export const defaults = {
   speedEmpty: assumed(12, 'km/h', 'Assumed below the LH621i third gear speed.'),
   distance: assumed(150, 'm'), positioningTime: assumed(30, 's'),
   fragmentationMode: assumed('direct', 'mode', 'Choose a loading class, a measured size or the rough guide.'),
-  table: assumed(anchorTable, 'cm, s, fraction, events/100 buckets', anchorSource),
-  x50: assumed(normal.x50, 'cm', anchorSource),
+  table: assumed(anchorTable, 'cm, s, fraction, events/100 buckets', 'See the source for each anchor cell.'),
+  x50: anchorDefaults.Normal.x50,
   x80: assumed(null, 'cm', 'Optional measured 80% passing size.'),
-  fillTime: assumed(normal.fillTime, 's', anchorSource),
-  fillFactor: assumed(normal.fillFactor, 'fraction', anchorSource),
-  hangUpsPer100: assumed(normal.hangUpsPer100, 'events/100 buckets', anchorSource),
+  fillTime: anchorDefaults.Normal.fillTime,
+  fillFactor: anchorDefaults.Normal.fillFactor,
+  hangUpsPer100: anchorDefaults.Normal.hangUpsPer100,
+  fillDistribution: calibrated('lognormal', 'distribution', 'Tariq et al. (2025) recommend a lognormal for loading duration.', tariq),
   useOversize: assumed(false, 'on/off', 'Optional rate based on the percentage of oversize rock.'),
   oversizePercent: assumed(null, '%', 'Measured retained percentage, or derived in Kuz-Ram mode.'),
   oversizeFactor: assumed(1, 'events/100 buckets per percentage point', 'Editable unit multiplier.'),
@@ -69,15 +92,18 @@ export const defaults = {
   B_m: assumed(2, 'm', kuzSource), S_m: assumed(2.5, 'm', kuzSource),
   D_mm: assumed(89, 'mm', kuzSource), W_m: assumed(0.2, 'm', kuzSource),
   L_m: assumed(12, 'm', kuzSource), H_m: assumed(15, 'm', kuzSource),
+  takeoverSeconds: { ...assumed(10, 's', 'Assumed share of the measured loading duration. Tariq et al. (2025) report takeover, filling and re-activation together.'), sourceUrl: tariq },
+  autoStopsPerHour: assumed(0.5, 'stops/trip hour', 'Assumed. Safety scanner stops, path faults and similar.'),
+  autoStopResetMinutes: assumed(2, 'min'),
   clearMinutes: assumed(4, 'min'), rockbreakerShare: assumed(0.30, 'fraction'),
   blockMinutes: assumed(30, 'min'), relocationMinutes: assumed(5, 'min'),
   shiftHours: assumed(12, 'h', 'Assumed shift length based on a common WA roster.'),
   handoverMinutes: assumed(15, 'min'), dutyShare: assumed(0.10, 'fraction'),
   dutyBlockMinutes: assumed(3, 'min', 'Assumed duration of each other-duty job.'),
   fillCV: assumed(0.20, 'CV', variability), tripCV: assumed(0.10, 'CV', variability),
-  drawpoints: assumed(3, 'drawpoints'), shifts: assumed(500, 'shifts'),
+  drawpoints: assumed(3, 'brows'), shifts: assumed(500, 'shifts'),
   explosivePrice: assumed(1.50, '$/kg', 'Assumed price, no public WA price.'),
-  inSituDensity: assumed(2.8, 't/m³'), valuePerTonne: assumed(15, '$/t', 'Site value of an extra bogged tonne.')
+  inSituDensity: assumed(2.8, 't/m³')
 }
 
 const values = Object.fromEntries(Object.entries(defaults).map(([key, entry]) => [key, entry.value]))
@@ -131,7 +157,8 @@ export function validateParams(overrides = {}) {
   const positive = { fillTime: 'Fill time', fillFactor: 'Fill factor', looseDensity: 'Loose density',
     speedLoaded: 'Loaded speed', speedEmpty: 'Empty speed', shiftHours: 'Shift length',
     dutyBlockMinutes: 'Duty block length', inSituDensity: 'In-situ density' }
-  const nonnegative = { distance: 'Tram distance', dumpTime: 'Dump time', positioningTime: 'Positioning time',
+  const nonnegative = { takeoverSeconds: 'Takeover time', autoStopsPerHour: 'Auto-stop rate', autoStopResetMinutes: 'Reset time',
+    distance: 'Tram distance', dumpTime: 'Dump time', positioningTime: 'Positioning time',
     handoverMinutes: 'Handover time', clearMinutes: 'Clearing time', blockMinutes: 'Block time',
     relocationMinutes: 'Relocation time', fillCV: 'Fill time CV', tripCV: 'Trip time CV',
     explosivePrice: 'Explosive price', oversizeSize: 'Oversize size', oversizeFactor: 'Oversize multiplier' }
@@ -146,15 +173,15 @@ export function validateParams(overrides = {}) {
     check(Number.isFinite(p[key]) && p[key] >= 0 && p[key] <= max, key + ' must be between 0 and ' + max + '.', key)
   }
   check(Number.isFinite(p.K_kg_per_m3) && p.K_kg_per_m3 >= 0, 'Powder factor must be zero or greater.', 'K_kg_per_m3')
-  check(Number.isFinite(p.valuePerTonne), 'Value per tonne must be a finite number.', 'valuePerTonne')
+
   check(p.x80 === null || (Number.isFinite(p.x80) && p.x80 >= p.x50), 'X80 must be at least X50.', 'x80')
   for (const key of ['drawpoints', 'shifts']) {
-    check(Number.isSafeInteger(p[key]) && p[key] > 0, 'The number of ' + key + ' must be a positive integer.', key)
+    check(Number.isSafeInteger(p[key]) && p[key] > 0, 'The number of ' + (key === 'drawpoints' ? 'brows' : key) + ' must be a positive integer.', key)
   }
   const alwaysBreaks = p.hangUpsPer100 === 100 && p.rockbreakerShare === 1
   const canSpendTimeRelocating = p.drawpoints > 1 && p.relocationMinutes > 0
-  check(!(alwaysBreaks && p.clearMinutes === 0 && p.blockMinutes === 0 && !canSpendTimeRelocating),
-    'Certain rockbreaker events need a nonzero clearing, block or usable relocation time.', 'clearMinutes')
+  check(!(alwaysBreaks && p.takeoverSeconds === 0 && p.clearMinutes === 0 && p.blockMinutes === 0 && !canSpendTimeRelocating),
+    'Certain rockbreaker events need a nonzero takeover, clearing, block or usable relocation time.', 'clearMinutes')
   if (1000 * p.looseDensity > p.maxDensityKgM3) issues.push({
     field: 'looseDensity', severity: 'warning', message: 'Loose density exceeds the selected bucket’s maximum material density of ' +
       p.maxDensityKgM3 + ' kg/m³.'

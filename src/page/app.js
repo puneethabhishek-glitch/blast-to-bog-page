@@ -1,6 +1,7 @@
 import { createParams, validateParams, tonnesPerBucket, costCheck } from '../engine/index.js'
 import { setupControls, inputScenarios, showIssues, assumptions, byId, costKeys } from './controls.js'
 import { drawCharts, number, tonnes, share } from './charts.js'
+import { setupCapacityMap } from './capacity-map.js'
 import { setupReplay } from './replay.js'
 
 let revision = 0
@@ -29,11 +30,14 @@ function updateCost(params, series) {
   const result = costCheck(...params, series.map(s => s.results.find(r => r.N === count).mean), params[0])
   const high = params[1].K_kg_per_m3 > params[0].K_kg_per_m3 ? 1 : 0
   byId('cost-direction').textContent = 'Blast ' + (high + 1) + ' compared with Blast ' + (2 - high) + ' at ' + count + (count === 1 ? ' loader.' : ' loaders.')
+  const equalPowder = params[0].K_kg_per_m3 === params[1].K_kg_per_m3
+  if (equalPowder) byId('cost-direction').textContent = 'Both blasts use the same powder factor.'
   metrics('cost-values', [['Blast 1 explosive cost', currency(result.costs[0], 2) + '/t'],
-    ['Blast 2 explosive cost', currency(result.costs[1], 2) + '/t'], ['Extra tonnes per shift', tonnes(result.extraTonnes) + ' t'],
-    ['Net value per shift', currency(result.netValue, 0)]])
+    ['Blast 2 explosive cost', currency(result.costs[1], 2) + '/t'], ['Extra tonnes per shift', equalPowder ? '—' : tonnes(result.extraTonnes) + ' t']])
   byId('payback').hidden = false
-  byId('payback').textContent = 'At these inputs, the extra explosive ' + (result.paysBack ? 'pays back' : 'does not pay back') + ' if the level can take the extra tonnes.'
+  byId('payback').textContent = equalPowder ? 'The explosive cost per tonne is the same for both blasts.' :
+    result.breakEvenValuePerTonne == null ? 'At ' + count + (count === 1 ? ' loader' : ' loaders') + ' the higher powder factor blast adds no tonnes, so the extra explosive does not pay back here.' :
+    'The higher powder factor blast pays for its extra explosive if one extra bogged tonne is worth more than ' + currency(result.breakEvenValuePerTonne, 2) + '.'
 }
 function render(params, series) {
   params.forEach((p, i) => {
@@ -45,6 +49,7 @@ function render(params, series) {
   })
   drawCharts(series, params)
   updateCost(params, series)
+  capacity.rebuild(params)
   replay.rebuild(params, series)
   assumptions(params)
 }
@@ -112,6 +117,7 @@ function refresh(changed) {
 }
 setupControls()
 const replay = setupReplay()
+const capacity = setupCapacityMap()
 document.addEventListener('input', event => {
   if (event.target.closest('#replay')) {
     if (event.target.id === 'replay-replayCount' && lastRun) {

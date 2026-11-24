@@ -1,4 +1,4 @@
-import { defaults, anchorTable, loaderOptions, comparisonDefaults } from '../engine/index.js'
+import { defaults, anchorDefaults, anchorTable, loaderOptions, comparisonDefaults } from '../engine/index.js'
 
 export const warning = 'Kuz-Ram was developed for bench blasting. For ring-drilled stopes treat this as a rough guide and type in measured fragmentation if you have it.'
 export const names = {
@@ -7,20 +7,21 @@ export const names = {
   L_m: 'Charge length', H_m: 'Bench or ring height', oversizePercent: 'Measured oversize',
   useOversize: 'Hang-up rate source', oversizeSize: 'Oversize threshold', oversizeFactor: 'Oversize multiplier',
   loaderModel: 'Loader model', bucketIndex: 'Bucket', looseDensity: 'Loose density', fillCV: 'Fill time variability',
+  takeoverSeconds: 'Remote takeover time', autoStopsPerHour: 'Auto-stops', autoStopResetMinutes: 'Reset time',
   tripCV: 'Trip time variability', distance: 'One-way tram distance', speedLoaded: 'Loaded speed', speedEmpty: 'Empty speed',
   positioningTime: 'Positioning time', clearMinutes: 'Hang-up clearing', rockbreakerShare: 'Rockbreaker share',
-  blockMinutes: 'Drawpoint block time', relocationMinutes: 'Relocation time', handoverMinutes: 'Handover gap',
-  dutyShare: 'Other duties share', dutyBlockMinutes: 'Duty block length', drawpoints: 'Drawpoints', shiftHours: 'Shift length',
-  shifts: 'Shifts simulated', explosivePrice: 'Explosive price', inSituDensity: 'In-situ density', valuePerTonne: 'Value of a tonne',
+  blockMinutes: 'Brow block time', relocationMinutes: 'Relocation time', handoverMinutes: 'Handover gap',
+  dutyShare: 'Other duties share', dutyBlockMinutes: 'Duty block length', drawpoints: 'Open brows', shiftHours: 'Shift length',
+  shifts: 'Shifts simulated', explosivePrice: 'Explosive price', inSituDensity: 'In-situ density',
   costCount: 'Fleet size', replayCount: 'Replay fleet', fillTime: 'Fill time', fillFactor: 'Fill factor', hangUpsPer100: 'Hang-ups',
   bucketVolume: 'Bucket volume', maxDensityKgM3: 'Maximum material density', capacity: 'Tramming capacity', dumpTime: 'Dump time'
 }
 const roughKeys = ['A', 'Q_kg', 'RWS', 'B_m', 'S_m', 'D_mm', 'W_m', 'L_m', 'H_m']
-export const costKeys = ['explosivePrice', 'inSituDensity', 'valuePerTonne']
+export const costKeys = ['explosivePrice', 'inSituDensity']
 const percentKeys = ['fillCV', 'tripCV', 'rockbreakerShare', 'dutyShare']
 const anchorKeys = ['x50', 'fillTime', 'fillFactor', 'hangUpsPer100']
 const loadingKeys = ['loaderModel', 'bucketIndex', 'looseDensity', 'fillCV']
-const automationKeys = ['distance', 'speedLoaded', 'speedEmpty', 'positioningTime', 'tripCV', 'clearMinutes', 'rockbreakerShare',
+const automationKeys = ['takeoverSeconds', 'autoStopsPerHour', 'autoStopResetMinutes', 'distance', 'speedLoaded', 'speedEmpty', 'positioningTime', 'tripCV', 'clearMinutes', 'rockbreakerShare',
   'blockMinutes', 'relocationMinutes', 'handoverMinutes', 'dutyShare', 'dutyBlockMinutes', 'drawpoints', 'shiftHours', 'shifts']
 const blastKeys = ['useOversize', 'oversizeSize', 'oversizeFactor']
 const sharedKeys = [...loadingKeys, ...automationKeys, ...blastKeys, ...costKeys]
@@ -59,9 +60,15 @@ function scenarioCard(scenario, i) {
     <p id="${s}-range" class="notice" hidden>outside the anchor range</p><dl id="${s}-metrics" class="metrics"></dl></section>`
 }
 function anchors() {
-  const head = anchorKeys.map(key => `<th scope="col">${names[key]}<br><span class="unit">${unit(key)}</span> ${badge('A')}</th>`).join('')
-  const rows = anchorTable.map((a, i) => '<tr><th scope="row">' + a.name + '</th>' + anchorKeys.map(key =>
-    '<td>' + field('anchor' + i, key, { value: a[key], tableLabel: a.name + ' ' + names[key] }) + '</td>').join('') + '</tr>')
+  const head = anchorKeys.map(key => `<th scope="col">${names[key]}<br><span class="unit">${unit(key)}</span></th>`).join('')
+  const rows = anchorTable.map((a, i) => {
+    const cells = anchorKeys.map(key => {
+      const { value, label } = anchorDefaults[a.name][key]
+      const tableLabel = a.name + ' ' + names[key] + ', ' + labels[label]
+      return '<td>' + badge(label) + field('anchor' + i, key, { value, tableLabel }) + '</td>'
+    })
+    return '<tr><th scope="row">' + a.name + '</th>' + cells.join('') + '</tr>'
+  })
   return '<table class="anchor-grid"><caption>Fragmentation anchors</caption><thead><tr><th>Class</th>' + head +
     '</tr></thead><tbody>' + rows.join('') + '</tbody></table>'
 }
@@ -151,12 +158,11 @@ export function showIssues(allIssues) {
 export function assumptions(params) {
   const rows = []
   function add(name, value, units, meta) {
-    rows.push([name, String(value), units, meta.label, meta.source])
+    rows.push([name, String(value), units, meta.label, meta.sourceUrl ? meta.source + ' ' + meta.sourceUrl : meta.source])
   }
-  function addInput(scope, key, prefix = '') {
+  function addInput(scope, key, prefix = '', meta = metadata(key)) {
     const el = byId(fieldId(scope, key))
     const value = el.selectedOptions?.[0]?.textContent ?? el.value
-    const meta = metadata(key)
     const machine = loaderOptions[params[0].loaderModel]
     const source = meta.label === 'V' ? machine.source + ' ' + machine.sheet : meta.source
     add(prefix + names[key], value || 'Unspecified', unit(key), { ...meta, source })
@@ -170,11 +176,13 @@ export function assumptions(params) {
     if (p.useOversize && p.fragmentationMode !== 'kuzRam') addInput(scope, 'oversizePercent', prefix)
   })
   for (const [i, a] of anchorTable.entries()) {
-    for (const key of anchorKeys) addInput('anchor' + i, key, a.name + ' · ')
+    for (const key of anchorKeys) addInput('anchor' + i, key, a.name + ' · ', anchorDefaults[a.name][key])
   }
   for (const key of sharedKeys) {
     if (!byId(fieldId('shared', key)).closest('.field').hidden) addInput('shared', key)
   }
+  const distribution = defaults.fillDistribution
+  add('Fill time distribution', distribution.value, distribution.unit, distribution)
   const p = params[0]
   const machine = loaderOptions[p.loaderModel]
   for (const key of ['bucketVolume', 'maxDensityKgM3', 'capacity', 'dumpTime']) {
