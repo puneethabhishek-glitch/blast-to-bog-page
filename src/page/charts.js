@@ -8,7 +8,7 @@ export const share = fraction => number(100 * fraction) + '%'
 const accounts = [
   ['driving', 'Driving', '#267562'], ['filling', 'Filling', '#304e70'],
   ['waitingOperator', 'Waiting for operator', '#c38742'], ['waitingDrawpoint', 'Waiting for a brow', '#a7bcd0'],
-  ['traffic', 'Waiting for traffic', '#80601e'], ['blocked', 'Blocked by hang-up', '#a65039'], ['stopped', 'Stopped for reset', '#81629a'], ['idle', 'Idle', '#b9c4bd']
+  ['traffic', 'Waiting for traffic', '#3f4a54'], ['blocked', 'Blocked by hang-up', '#a65039'], ['stopped', 'Stopped for reset', '#81629a'], ['idle', 'Idle', '#b9c4bd']
 ]
 const duties = [accounts[1], ['takeover', 'Takeover', '#567d96'], ['resets', 'Resets', '#81629a'], ['clearing', 'Clearing hang-ups', '#a65039'], ['otherDuties', 'Other duties', '#c38742']]
 
@@ -47,7 +47,7 @@ function niceStep(value) {
   const magnitude = 10 ** Math.floor(Math.log10(value || 1))
   return [1, 2, 2.5, 5, 10].find(n => n * magnitude >= value) * magnitude
 }
-function production(series, width) {
+function production(series, width, ceiling) {
   const container = byId('production-chart')
   container.replaceChildren()
   const h = width < 520 ? 237 : 268
@@ -72,29 +72,28 @@ function production(series, width) {
   })
   const notes = byId('knees')
   notes.replaceChildren()
-  series.forEach(({ results, knee }, i) => {
+  const labels = { operator: 'Operator limit', brows: 'Brow limit', gain: 'Next loader adds under 10%' }
+  series.forEach(({ results, limit, reason }, i) => {
     const color = palette[i]
     mark(plot, 'polyline', { class: 'mean-line', points: points(results, 'mean'), fill: 'none', stroke: color,
       'stroke-width': 3, 'stroke-dasharray': i ? '8 4' : 'none', 'stroke-linejoin': 'round' })
     for (const r of results) {
-      const dot = mark(plot, 'circle', { cx: x(r.N), cy: y(r.mean), r: r.N === knee ? 6 : 3.5,
+      const dot = mark(plot, 'circle', { cx: x(r.N), cy: y(r.mean), r: r.N === limit ? 6 : 3.5,
         fill: color, stroke: '#fff', 'stroke-width': 1.5 })
       mark(dot, 'title', {}, `Blast ${i + 1}, ${r.N} loaders, ${tonnes(r.mean)} tonnes per shift`)
     }
     if (results.every(r => r.mean === 0)) {
       html(notes, 'p', `Blast ${i + 1}: no tonnes bogged at these fleet sizes`)
-    } else if (knee == null && results.some(r => r.mean === 0)) {
-      html(notes, 'p', `Blast ${i + 1}: the tested fleets do not establish a limit`)
-    } else if (knee == null) {
-      html(notes, 'p', `Blast ${i + 1}: every extra loader up to ${counts.at(-1)} still adds 10% or more`)
+    } else if (limit == null) {
+      html(notes, 'p', `Blast ${i + 1}: up to ${counts.at(-1)} loaders the operator stays at or below the ${share(ceiling)} ceiling and every extra loader adds 10% or more`)
     } else {
-      const row = results.find(r => r.N === knee)
-      // Separate label lanes remain legible when the two knees coincide.
+      const row = results.find(r => r.N === limit)
+      // Separate label lanes remain legible when the two limits coincide.
       const labelY = 12 + i * 16
-      const labelX = Math.max(left, Math.min(width - 170, x(knee) - 30))
-      mark(plot, 'path', { d: `M${x(knee)},${y(row.mean) - 7} V${labelY + 4} H${labelX}`, fill: 'none', stroke: color, 'stroke-dasharray': '2 3' })
-      mark(plot, 'text', { x: labelX, y: labelY, style: 'fill:' + color }, 'Extra loader adds under 10%')
-      html(notes, 'p', `Blast ${i + 1}: extra loader adds under 10% after ${knee} ${knee === 1 ? 'loader' : 'loaders'}`, 'knee-key' + (i ? ' second' : ''))
+      const labelX = Math.max(left, Math.min(width - 170, x(limit) - 30))
+      mark(plot, 'path', { d: `M${x(limit)},${y(row.mean) - 7} V${labelY + 4} H${labelX}`, fill: 'none', stroke: color, 'stroke-dasharray': '2 3' })
+      mark(plot, 'text', { x: labelX, y: labelY, style: 'fill:' + color }, labels[reason])
+      html(notes, 'p', `Blast ${i + 1}: ${limitText(limit)}. ${reasonText(results, limit, reason, ceiling)}`, 'knee-key' + (i ? ' second' : ''))
     }
   })
   html(container, 'p', 'Loaders per operator', 'axis-title')
@@ -143,18 +142,37 @@ function bars(kind, series, shiftHours) {
 }
 export function drawCharts(series, params) {
   const open = [...document.querySelectorAll('.chart-data')].map(d => d.open)
-  production(series, Math.max(220, byId('production-chart').clientWidth))
+  const ceiling = params[0].operatorCeiling
+  production(series, Math.max(220, byId('production-chart').clientWidth), ceiling)
   bars('loader', series, params[0].shiftHours)
   bars('operator', series, params[0].shiftHours)
   document.querySelectorAll('.chart-data').forEach((d, i) => { d.open = open[i] ?? false })
-  const i = series[1].knee != null ? 1 : series[0].knee != null ? 0 : 1
-  const { results, knee } = series[i]
-  const row = results.find(r => r.N === knee) ?? results.at(-2)
-  const next = results.find(r => r.N === row.N + 1)
-  const gain = next.mean - row.mean
+  // Compare the operator's load for both blasts at the larger of the two limits.
+  const n = Math.min(counts(series).at(-1), Math.max(...series.map(x => x.limit ?? counts(series).at(-1))))
+  const rows = series.map(x => x.results.find(r => r.N === n))
   const answer = byId('answer')
   answer.hidden = false
-  const change = Math.abs(gain) < 5 ? 'changes mean production by less than 10 tonnes' :
-    (gain < 0 ? 'reduces' : 'increases') + ' mean production by ' + tonnes(Math.abs(gain)) + ' tonnes'
-  answer.textContent = `With Blast ${i + 1}, the operator is busy ${share(row.operatorBusyShare)} of the shift at ${row.N} ${row.N === 1 ? 'loader' : 'loaders'}. Going to ${next.N} ${change} per shift.`
+  answer.textContent = `At ${n} ${n === 1 ? 'loader' : 'loaders'} the operator is busy ${share(rows[0].operatorBusyShare)} of working time with Blast 1 and ${share(rows[1].operatorBusyShare)} with Blast 2. The ceiling is ${share(ceiling)}.`
+  headline(series, ceiling)
+}
+const counts = series => series[0].results.map(r => r.N)
+export const limitText = limit => limit == null ? 'more than the fleets tested' : limit + (limit === 1 ? ' loader' : ' loaders')
+export function reasonText(results, limit, reason, ceiling) {
+  const next = results.find(r => r.N === limit + 1)
+  if (reason === 'operator') return `A ${ordinal(limit + 1)} loader would keep the operator ${share(next.operatorBusyShare)} busy, above the ${share(ceiling)} ceiling`
+  if (reason === 'brows') return 'Every open brow is in use, so another loader mostly waits for a brow'
+  return 'Another loader adds under 10% to mean tonnes'
+}
+const ordinal = n => n + (['th', 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] ?? 'th')
+function headline(series, ceiling) {
+  const list = byId('headline-result')
+  list.replaceChildren()
+  series.forEach(({ results, limit, reason }, i) => {
+    const item = html(list, 'div')
+    html(item, 'dt', 'Blast ' + (i + 1))
+    const value = html(item, 'dd', results.every(r => r.mean === 0) ? 'No tonnes' : limitText(limit))
+    if (limit != null) html(value, 'small', reasonText(results, limit, reason, ceiling) + '.')
+  })
+  byId('headline-reason').textContent = `How many loaders one operator can run with each blast. The limit is the largest fleet that keeps the operator at or below ${share(ceiling)} busy over working time, unless the next loader already adds under 10%. The ceiling is an assumption you can change under Automation.`
+  byId('headline').hidden = false
 }

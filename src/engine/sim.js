@@ -54,6 +54,9 @@ function shift(config, N, seed, record) {
   const dutySeconds = p.dutyBlockMinutes * 60
   const dutyRate = p.dutyShare / dutySeconds
   let busy = p.handoverMinutes > 0
+  // One crib break at mid shift. The operator finishes the current task first.
+  let cribDue = false
+  let cribTaken = 0
   let now = 0
   let hangUps = 0
   let rockbreakers = 0
@@ -210,7 +213,16 @@ function shift(config, N, seed, record) {
     else schedule(l.returnsAt, 'returned', l)
   }
   function dispatch() {
-    if (busy || !jobs.length) return
+    if (busy) return
+    if (cribDue) {
+      cribDue = false
+      busy = true
+      cribTaken = Math.min(p.cribMinutes * 60, end - now)
+      log('cribStarted')
+      schedule(now + p.cribMinutes * 60, 'cribDone')
+      return
+    }
+    if (!jobs.length) return
     // Resets and other duties can proceed even when every brow is closed.
     const i = freeCount ? 0 : jobs.findIndex(job => job === null || job.state === 'stopped')
     if (i < 0) return
@@ -256,6 +268,7 @@ function shift(config, N, seed, record) {
     join(l)
   }
   schedule(nextPoissonArrival(rng, 0, dutyRate), 'duty')
+  if (p.cribMinutes > 0) schedule(end / 2, 'crib')
   dispatch()
   while (events.items.length) {
     const { time, type, loader: l, point } = events.pop()
@@ -273,7 +286,12 @@ function shift(config, N, seed, record) {
       case 'approached':
         join(l)
         break
+      case 'crib':
+        cribDue = true
+        log('cribDue')
+        break
       case 'handoverDone':
+      case 'cribDone':
       case 'dutyDone':
         busy = false
         log(type)
@@ -393,7 +411,7 @@ function shift(config, N, seed, record) {
     l.times[l.state] += end - l.since
     return { id: l.id, buckets: l.buckets, tonnes: l.buckets * payload, ...l.times }
   })
-  return { ...(road && record ? { layout: config.layout } : {}), ...(p.resetPriority ? { resetPriority: true } : {}), loaders: totals, operator, hangUps, rockbreakers, buckets, tonnes: buckets * payload, eventLog }
+  return { ...(road && record ? { layout: config.layout } : {}), ...(p.resetPriority ? { resetPriority: true } : {}), loaders: totals, operator, workingSeconds: end - Math.min(end, p.handoverMinutes * 60) - cribTaken, hangUps, rockbreakers, buckets, tonnes: buckets * payload, eventLog }
 }
 
 /** Replay logs use zero-based IDs and seconds since shift start. */
@@ -417,6 +435,7 @@ export function runMonteCarlo(params, Nlist, shifts = params?.shifts ?? defaults
   const results = counts.map(N => {
     checkCount(N)
     let sum = 0
+    let working = 0
     const operatorShares = emptyOperator()
     const tonnes = []
     const meanTime = emptyTimes()
@@ -424,6 +443,7 @@ export function runMonteCarlo(params, Nlist, shifts = params?.shifts ?? defaults
       const result = shift(config, N, shiftSeed, false)
       tonnes.push(result.tonnes)
       sum += result.tonnes
+      working += result.workingSeconds
       for (const key of operatorAccounts) operatorShares[key] += result.operator[key]
       for (const l of result.loaders) {
         for (const key of timeAccounts) meanTime[key] += l[key]
@@ -431,7 +451,8 @@ export function runMonteCarlo(params, Nlist, shifts = params?.shifts ?? defaults
     }
     tonnes.sort((a, b) => a - b)
     for (const key of timeAccounts) meanTime[key] /= shifts * N
-    for (const key of operatorAccounts) operatorShares[key] /= shifts * config.end
+    // Shares of working time: the shift less handover and crib.
+    for (const key of operatorAccounts) operatorShares[key] /= working || shifts * config.end
     const operatorBusyShare = operatorAccounts.reduce((sum, key) => sum + operatorShares[key], 0)
     return { N, mean: sum / shifts, p10: percentile(tonnes, 0.1), p50: percentile(tonnes, 0.5),
       p90: percentile(tonnes, 0.9), meanTime, operatorShares, operatorBusyShare }
@@ -440,5 +461,26 @@ export function runMonteCarlo(params, Nlist, shifts = params?.shifts ?? defaults
     const next = results[i + 1]
     return next?.N === row.N + 1 && row.mean > 0 && next.mean - row.mean < 0.1 * row.mean
   })?.N ?? null
-  return { results, knee }
+  return { results, knee, ...operatorLimit(results, knee, config.p) }
+}
+
+/**
+ * The operator's loader limit is the largest fleet that keeps the operator at or
+ * below the busy ceiling, unless an extra loader already adds under 10% before that.
+ * The reason says what sets the limit: the operator, the open brows, or little gain.
+ */
+export function operatorLimit(results, knee, p) {
+  let within = 0
+  for (let i = 0; i < results.length; i++) {
+    if (i && results[i].N !== results[i - 1].N + 1) break
+    if (results[i].operatorBusyShare > p.operatorCeiling + 1e-9) break
+    within = results[i].N
+  }
+  if (!results.length || results.every(r => !(r.mean > 0))) return { limit: null, reason: null }
+  const cap = within || results[0].N
+  const limit = knee != null ? Math.min(knee, cap) : cap
+  const next = results.find(r => r.N === limit + 1)
+  if (!next) return { limit: null, reason: null }
+  if (next.operatorBusyShare > p.operatorCeiling + 1e-9) return { limit, reason: 'operator' }
+  return { limit, reason: limit >= p.drawpoints ? 'brows' : 'gain' }
 }

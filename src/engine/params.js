@@ -102,6 +102,8 @@ export const defaults = {
   blockMinutes: assumed(30, 'min'), relocationMinutes: assumed(5, 'min'),
   shiftHours: assumed(12, 'h', 'Assumed shift length based on a common WA roster.'),
   handoverMinutes: assumed(15, 'min'), dutyShare: assumed(0.10, 'fraction'),
+  cribMinutes: assumed(30, 'min', 'Assumed one crib break at mid shift with no relief operator. Set 0 if a relief operator covers crib.'),
+  operatorCeiling: assumed(0.90, 'fraction', 'Assumed planning ceiling for the share of working time the operator is busy. Above it queues grow fast and there is no slack for upsets.'),
   dutyBlockMinutes: assumed(3, 'min', 'Assumed duration of each other-duty job.'),
   fillCV: assumed(0.20, 'CV', variability), tripCV: assumed(0.10, 'CV', variability),
   drawpoints: assumed(4, 'brows', 'One open brow per loader up to the largest fleet compared.'), shifts: assumed(500, 'shifts'),
@@ -164,7 +166,7 @@ export function validateParams(overrides = {}) {
     dutyBlockMinutes: 'Duty block length', inSituDensity: 'In-situ density' }
   const nonnegative = { takeoverSeconds: 'Takeover time', autoStopsPerHour: 'Auto-stop rate', autoStopResetMinutes: 'Reset time',
     distance: 'Tram distance', dumpTime: 'Dump time', positioningTime: 'Positioning time',
-    handoverMinutes: 'Handover time', clearMinutes: 'Clearing time', blockMinutes: 'Block time',
+    handoverMinutes: 'Handover time', cribMinutes: 'Crib break', clearMinutes: 'Clearing time', blockMinutes: 'Block time',
     relocationMinutes: 'Relocation time', fillCV: 'Fill time CV', tripCV: 'Trip time CV',
     explosivePrice: 'Explosive price', oversizeSize: 'Oversize size', oversizeFactor: 'Oversize multiplier' }
   for (const [key, name] of Object.entries(positive)) {
@@ -173,7 +175,7 @@ export function validateParams(overrides = {}) {
   for (const [key, name] of Object.entries(nonnegative)) {
     check(Number.isFinite(p[key]) && p[key] >= 0, name + ' must be zero or greater.', key)
   }
-  for (const [key, max] of [['dutyShare', 1], ['rockbreakerShare', 1], ['hangUpsPer100', 100], ['oversizePercent', 100]]) {
+  for (const [key, max] of [['dutyShare', 1], ['operatorCeiling', 1], ['rockbreakerShare', 1], ['hangUpsPer100', 100], ['oversizePercent', 100]]) {
     if (key === 'oversizePercent' && p[key] == null) continue
     check(Number.isFinite(p[key]) && p[key] >= 0 && p[key] <= max, key + ' must be between 0 and ' + max + '.', key)
   }

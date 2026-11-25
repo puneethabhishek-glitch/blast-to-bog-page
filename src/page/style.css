@@ -58,7 +58,7 @@ h3 { font-size: 1.05rem }
 .waitingOperator { fill: #865821; background: #865821 }
 .waitingDrawpoint { fill: #526979; background: #526979 }
 .level .machine .stop-timer { fill: #452d55; font: bold 9px system-ui; paint-order: stroke; stroke: white; stroke-width: 2px }
-.traffic { fill: #80601e; background: #80601e }
+.traffic { fill: #3f4a54; background: #3f4a54 }
 .stopped { fill: #74548e; background: #74548e }
 #capacity-map > .muted { margin-top: .4rem }
 #map-progress { font-size: .85rem; color: var(--muted) }
@@ -77,6 +77,9 @@ h3 { font-size: 1.05rem }
 .capacity-cell[data-limit="4"] { background: #428078; color: white }
 .capacity-cell[data-limit="5"] { background: #286462; color: white }
 .capacity-cell[data-limit="6+"] { background: #224a50; color: white }
+.capacity-cell[data-reason="brows"], .swatch.brow-limit { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.38) 0 3px, transparent 3px 7px) }
+.swatch.brow-limit { background-color: #428078 }
+.map-key { display: flex; align-items: center; gap: .45rem; color: var(--muted); font-size: .85rem; margin-top: .4rem }
 .capacity-cell[aria-current], .capacity-cell:focus-visible { outline: 2px solid #163b2e; outline-offset: -3px }
 #map-markers { position: absolute; inset: 0; pointer-events: none }
 #map-markers .blast-dot { position: absolute; display: grid; place-items: center; width: .85rem; height: .85rem; border-radius: 100%; color: white; font: bold .57rem/1 system-ui; box-shadow: 0 0 0 1px white }
@@ -171,3 +174,11 @@ a { color: #075d49; text-underline-offset: .17em }
   .assumption-table td { border: 0; padding: .2rem; }
   .assumption-table td:last-child { grid-column: 1/-1; color: var(--muted); font-size: .8rem }
 }
+.headline { border-left: 4px solid var(--teal); margin-bottom: 1.25rem }
+.headline h2 { font-size: 1.05rem; color: var(--muted); font-weight: 600; margin-bottom: .5rem }
+.headline-result { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .75rem; margin: 0 0 .75rem }
+.headline-result div { background: #f5f7f3; border-radius: .45rem; padding: .7rem .8rem }
+.headline-result dt { font-size: .85rem; font-weight: 650; color: var(--teal) }
+.headline-result div:nth-child(2) dt { color: var(--clay) }
+.headline-result dd { margin: .2rem 0 0; font-size: 1.55rem; font-weight: 700; line-height: 1.15 }
+.headline-result dd small { display: block; font-size: .82rem; font-weight: 500; color: var(--muted); margin-top: .25rem }

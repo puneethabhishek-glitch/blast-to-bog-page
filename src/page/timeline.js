@@ -91,9 +91,11 @@ export function buildTimeline(shift) {
         parked(e.mode)
         break
       case 'handoverStarted': operator = 'shift handover'; break
+      case 'cribStarted': operator = 'crib break'; break
       case 'dutyQueued': queue.push('other duties'); queueChanged = true; break
       case 'dutyStarted': serve('other duties'); operator = 'other duties'; break
       case 'dutyDone':
+      case 'cribDone':
       case 'handoverDone': operator = 'idle'; break
       case 'queued':
         queue.push(id + 1)

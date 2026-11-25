@@ -2,12 +2,14 @@ import { fillTimes, hangUpRates, fillFactorAtTime, mapShiftsFor } from '../engin
 import { byId } from './controls.js'
 import { number, tonnes, share } from './charts.js'
 
+const reasonLabels = { operator: ', set by the operator', brows: ', set by the open brows', gain: ', next loader adds under 10%' }
+
 function comparison([a, b]) {
   if ([a, b].includes('—')) return 'One or both blasts produce no tonnes across the tested fleets, so their limits cannot be compared.'
   if (a === b) return 'At these inputs both blasts allow the same number of loaders. The blast is not the binding limit here.' +
     (a === '6+' ? ' Both still gain at six loaders, the largest fleet tested.' : '')
   return 'Moving from Blast 1 to Blast 2 ' + (parseInt(a) > parseInt(b) ? 'drops' : 'raises') +
-    " the operator’s limit from " + a + ' to ' + b + ' loaders.'
+    " the operator’s limit from " + a + ' to ' + b + (String(b) === '1' ? ' loader.' : ' loaders.')
 }
 
 const cellLabel = (f, h) => number(f, 2) + ' s fill · ' + number(h, 2) + (h === 1 ? ' hang-up' : ' hang-ups') + ' per 100 buckets'
@@ -69,6 +71,8 @@ export function setupCapacityMap() {
     const nextSignature = JSON.stringify([params, blasts])
     if (nextSignature === signature) return
     signature = nextSignature
+    byId('map-rule').textContent = 'Each number is the largest fleet that keeps the operator at or below ' + share(params.operatorCeiling) +
+      ' busy over working time, unless the next loader already adds under 10%. At 6+ six loaders still fit.'
     byId('map-note').textContent = 'Each square is ' + mapShiftsFor(params) + ' simulated shifts. Tap a square to see its numbers.'
     const run = ++generation
     clearWorkers()
@@ -95,6 +99,7 @@ export function setupCapacityMap() {
       cell.button.textContent = '·'
       cell.button.tabIndex = -1
       cell.button.removeAttribute('data-limit')
+      cell.button.removeAttribute('data-reason')
       cell.button.setAttribute('aria-label', cellLabel(cell.f, cell.h))
     }
     const keys = blasts.map(b => register(b.fillTime, b.hangUpsPer100, b.fillFactor))
@@ -119,7 +124,7 @@ export function setupCapacityMap() {
     select(selected)
     let complete = 0
     section.dataset.state = 'running'
-    progress.textContent = '0 of 70 squares'
+    progress.textContent = 'Working out 0 of 70 squares'
     byId('map-answer').hidden = true
     const list = [...jobs.values()].filter(job => !cached.has(job.key))
     const lanes = Math.min(4, navigator.hardwareConcurrency || 2)
@@ -136,8 +141,9 @@ export function setupCapacityMap() {
       if (cell) {
         cell.button.textContent = result.limit
         cell.button.dataset.limit = result.limit
-        cell.button.setAttribute('aria-label', cellLabel(cell.f, cell.h) + (result.limit === '—' ? ', no production' : ', loader limit ' + result.limit))
-        progress.textContent = ++complete + ' of 70 squares'
+        if (result.reason) cell.button.dataset.reason = result.reason
+        cell.button.setAttribute('aria-label', cellLabel(cell.f, cell.h) + (result.limit === '—' ? ', no production' : ', loader limit ' + result.limit + (reasonLabels[result.reason] ?? '')))
+        progress.textContent = 'Working out ' + ++complete + ' of 70 squares'
         if (cells[selected] === cell) select(selected)
       }
       if (data.size === jobs.size) {
@@ -146,6 +152,7 @@ export function setupCapacityMap() {
         byId('map-answer').hidden = false
         section.dataset.elapsedMs = Math.round(performance.now() - started)
         section.dataset.state = 'ready'
+        progress.textContent = ''
       }
     }
     for (const { key } of jobs.values()) if (cached.has(key)) display(key, cached.get(key))

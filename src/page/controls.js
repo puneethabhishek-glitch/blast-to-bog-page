@@ -11,7 +11,7 @@ export const names = {
   takeoverSeconds: 'Remote takeover time', autoStopsPerHour: 'Auto-stops', autoStopResetMinutes: 'Reset time',
   tripCV: 'Trip time variability', distance: 'One-way tram distance', speedLoaded: 'Loaded speed', speedEmpty: 'Empty speed',
   positioningTime: 'Positioning time', clearMinutes: 'Hang-up clearing', rockbreakerShare: 'Rockbreaker share',
-  blockMinutes: 'Brow block time', relocationMinutes: 'Relocation time', handoverMinutes: 'Handover gap',
+  blockMinutes: 'Brow block time', relocationMinutes: 'Relocation time', handoverMinutes: 'Handover gap', cribMinutes: 'Crib break', operatorCeiling: 'Operator busy ceiling',
   dutyShare: 'Other duties share', dutyBlockMinutes: 'Duty block length', drawpoints: 'Open brows', shiftHours: 'Shift length',
   shifts: 'Shifts simulated', explosivePrice: 'Explosive price', inSituDensity: 'In-situ density',
   costCount: 'Fleet size', replayCount: 'Replay fleet', fillTime: 'Fill time', fillFactor: 'Fill factor', hangUpsPer100: 'Hang-ups',
@@ -19,12 +19,12 @@ export const names = {
 }
 const roughKeys = ['A', 'Q_kg', 'RWS', 'B_m', 'S_m', 'D_mm', 'W_m', 'L_m', 'H_m']
 export const costKeys = ['explosivePrice', 'inSituDensity']
-const percentKeys = ['fillCV', 'tripCV', 'rockbreakerShare', 'dutyShare']
+const percentKeys = ['fillCV', 'tripCV', 'rockbreakerShare', 'dutyShare', 'operatorCeiling']
 const anchorKeys = ['x50', 'fillTime', 'fillFactor', 'hangUpsPer100']
 const loadingKeys = ['loaderModel', 'bucketIndex', 'looseDensity', 'fillCV']
 const switches = ['trafficModel', 'resetPriority']
 const automationKeys = [...switches, 'minGapMetres', 'takeoverSeconds', 'autoStopsPerHour', 'autoStopResetMinutes', 'distance', 'speedLoaded', 'speedEmpty', 'positioningTime', 'tripCV', 'clearMinutes', 'rockbreakerShare',
-  'blockMinutes', 'relocationMinutes', 'handoverMinutes', 'dutyShare', 'dutyBlockMinutes', 'drawpoints', 'shiftHours', 'shifts']
+  'blockMinutes', 'relocationMinutes', 'handoverMinutes', 'cribMinutes', 'operatorCeiling', 'dutyShare', 'dutyBlockMinutes', 'drawpoints', 'shiftHours', 'shifts']
 const blastKeys = ['useOversize', 'oversizeSize', 'oversizeFactor']
 const sharedKeys = [...loadingKeys, ...automationKeys, ...blastKeys, ...costKeys]
 const displayUnits = { preset: 'class', loaderModel: 'model', bucketIndex: 'm³', useOversize: 'mode', hangUpsPer100: '/100 buckets',

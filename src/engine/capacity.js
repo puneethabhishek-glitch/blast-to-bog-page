@@ -25,8 +25,7 @@ export function fillFactorAtTime(time, anchors) {
 
 export function capacityAt(params, fillTime, hangUpsPer100, fillFactor = fillFactorAtTime(fillTime, params.table)) {
   const inputs = { ...params, fragmentationMode: 'direct', useOversize: false, fillTime, hangUpsPer100, fillFactor }
-  const { results, knee } = runMonteCarlo(inputs, counts, mapShiftsFor(params), 24)
+  const { results, limit, reason } = runMonteCarlo(inputs, counts, mapShiftsFor(params), 24)
   const rows = results.map(({ N, mean, operatorBusyShare }) => ({ N, mean, operatorBusyShare }))
-  const limit = knee ?? (rows.at(-1).mean > 0 ? '6+' : '—')
-  return { limit, rows }
+  return { limit: limit ?? (rows.at(-1).mean > 0 ? '6+' : '—'), reason, rows }
 }
