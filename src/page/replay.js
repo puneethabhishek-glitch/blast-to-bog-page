@@ -192,7 +192,10 @@ export function setupReplay() {
       slider.max = end
       hangUps = plans.flatMap(p => p.timeline.hangUps).sort((a, b) => a.time - b.time)
       byId('transport').disabled = false
-      byId('replay-note').textContent = 'This replays one simulated shift. The chart numbers above come from ' + number(params[0].shifts) + ' shifts.'
+      const brows = params[0].drawpoints, spare = brows - count
+      byId('replay-note').textContent = 'This replays one simulated shift. The chart numbers above come from ' + number(params[0].shifts) + ' shifts.' +
+        (spare > 0 ? ' Each loader has its own home brow, so with ' + count + (count === 1 ? ' loader ' : ' loaders ') +
+          (spare === 1 ? 'one brow is spare. It is' : spare + ' brows are spare. They are') + ' used only when another brow closes for a rockbreaker.' : '')
       lastClock = null
       seek(0)
     }

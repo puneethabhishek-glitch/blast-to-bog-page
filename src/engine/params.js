@@ -114,7 +114,7 @@ const values = Object.fromEntries(Object.entries(defaults).map(([key, entry]) =>
 export const comparisonDefaults = {
   scenarios: [{ preset: 'Normal', powderFactor: defaults.K_kg_per_m3.value }, { preset: 'Coarse', powderFactor: 0.60 }],
   counts: [1, 2, 3, 4], costCount: assumed(3, 'loaders', 'Selected fleet for the cost comparison.'),
-  replayCount: assumed(3, 'loaders', 'Selected fleet for the shift replay.'), seed: 24
+  replayCount: assumed(4, 'loaders', 'Selected fleet for the shift replay. One loader per open brow.'), seed: 24
 }
 
 /** Resolve raw overrides. Model/bucket selection and anchors supply dependent defaults. */
