@@ -21,7 +21,7 @@ function prepare(params, distribution) {
   if (errors.length) throw new RangeError(errors.map(issue => issue.message).join(' '))
   const p = createParams(params)
   const trip = autonomousTime(p)
-  const loadedAndDump = p.distance / (p.speedLoaded / 3.6) + p.dumpTime
+  const loadedAndDump = p.distance / (p.speedLoaded / 3.6) + p.dumpTime + p.dumpManoeuvreSeconds
   return {
     p, trip, layout: p.trafficModel ? roadLayout(p.distance, p.drawpoints) : null, end: p.shiftHours * 3600, dumpFraction: trip > 0 ? loadedAndDump / trip : 0,
     fillTime: sampler(distribution, p.fillTime, p.fillCV), tripTime: sampler(distribution, trip, p.tripCV),
@@ -50,6 +50,8 @@ function shift(config, N, seed, record) {
   const jobs = [] // Loader objects and null duty jobs in FCFS order.
   const awaitingPoint = [] // New arrivals and stranded rockbreaker loaders, in arrival order.
   const operator = emptyOperator()
+  // Seconds each job waited in the operator queue, by job type.
+  const waits = { fill: [], reset: [] }
   const stopRate = p.autoStopsPerHour / 3600
   const dutySeconds = p.dutyBlockMinutes * 60
   const dutyRate = p.dutyShare / dutySeconds
@@ -73,6 +75,7 @@ function shift(config, N, seed, record) {
       const firstFill = jobs.findIndex(job => job?.state !== 'stopped')
       jobs.splice(firstFill < 0 ? jobs.length : firstFill, 0, l)
     } else jobs.push(l)
+    l.queuedAt = now
   }
   function haul(l, destination, loaded, done) {
     const speed = (loaded ? p.speedLoaded : p.speedEmpty) / (3.6 * l.tripScale)
@@ -131,6 +134,7 @@ function shift(config, N, seed, record) {
     if (!road) l.point = firstFree(l.point)
     state(l, 'waitingOperator')
     jobs.push(l)
+    l.queuedAt = now
     log('queued', l)
   }
   function relocate(l, target) {
@@ -228,6 +232,7 @@ function shift(config, N, seed, record) {
     if (i < 0) return
     const job = i === 0 ? jobs.shift() : jobs.splice(i, 1)[0]
     busy = true
+    if (job) waits[job.state === 'stopped' ? 'reset' : 'fill'].push(now - job.queuedAt)
     if (job === null) {
       operator.otherDuties += Math.min(dutySeconds, end - now)
       log('dutyStarted')
@@ -278,7 +283,7 @@ function shift(config, N, seed, record) {
         road.tick(point, now)
         break
       case 'atDump':
-        dwell(l, p.dumpTime * l.tripScale, 'dumped')
+        dwell(l, (p.dumpTime + p.dumpManoeuvreSeconds) * l.tripScale, 'dumped')
         break
       case 'atReturn':
         dwell(l, p.positioningTime * l.tripScale, 'returned')
@@ -411,7 +416,7 @@ function shift(config, N, seed, record) {
     l.times[l.state] += end - l.since
     return { id: l.id, buckets: l.buckets, tonnes: l.buckets * payload, ...l.times }
   })
-  return { ...(road && record ? { layout: config.layout } : {}), ...(p.resetPriority ? { resetPriority: true } : {}), loaders: totals, operator, workingSeconds: end - Math.min(end, p.handoverMinutes * 60) - cribTaken, hangUps, rockbreakers, buckets, tonnes: buckets * payload, eventLog }
+  return { ...(road && record ? { layout: config.layout } : {}), ...(p.resetPriority ? { resetPriority: true } : {}), loaders: totals, operator, waits, workingSeconds: end - Math.min(end, p.handoverMinutes * 60) - cribTaken, hangUps, rockbreakers, buckets, tonnes: buckets * payload, eventLog }
 }
 
 /** Replay logs use zero-based IDs and seconds since shift start. */
@@ -436,6 +441,7 @@ export function runMonteCarlo(params, Nlist, shifts = params?.shifts ?? defaults
     checkCount(N)
     let sum = 0
     let working = 0
+    const fillWaits = [], resetWaits = []
     const operatorShares = emptyOperator()
     const tonnes = []
     const meanTime = emptyTimes()
@@ -444,6 +450,8 @@ export function runMonteCarlo(params, Nlist, shifts = params?.shifts ?? defaults
       tonnes.push(result.tonnes)
       sum += result.tonnes
       working += result.workingSeconds
+      for (const w of result.waits.fill) fillWaits.push(w)
+      for (const w of result.waits.reset) resetWaits.push(w)
       for (const key of operatorAccounts) operatorShares[key] += result.operator[key]
       for (const l of result.loaders) {
         for (const key of timeAccounts) meanTime[key] += l[key]
@@ -454,33 +462,38 @@ export function runMonteCarlo(params, Nlist, shifts = params?.shifts ?? defaults
     // Shares of working time: the shift less handover and crib.
     for (const key of operatorAccounts) operatorShares[key] /= working || shifts * config.end
     const operatorBusyShare = operatorAccounts.reduce((sum, key) => sum + operatorShares[key], 0)
+    const p90 = list => list.length ? percentile(Float64Array.from(list).sort(), 0.9) : null
     return { N, mean: sum / shifts, p10: percentile(tonnes, 0.1), p50: percentile(tonnes, 0.5),
-      p90: percentile(tonnes, 0.9), meanTime, operatorShares, operatorBusyShare }
+      p90: percentile(tonnes, 0.9), meanTime, operatorShares, operatorBusyShare,
+      waitP90: { fill: p90(fillWaits), reset: p90(resetWaits) } }
   })
   const knee = results.find((row, i) => {
     const next = results[i + 1]
     return next?.N === row.N + 1 && row.mean > 0 && next.mean - row.mean < 0.1 * row.mean
   })?.N ?? null
-  return { results, knee, ...operatorLimit(results, knee, config.p) }
+  return { results, knee, ...operatorLimit(results, knee, config.p, config.end) }
 }
 
 /**
  * The operator's loader limit is the largest fleet that keeps the operator at or
  * below the busy ceiling, unless an extra loader already adds under 10% before that.
- * The reason says what sets the limit: the operator, the open brows, or little gain.
+ * The reason says what sets the limit: the operator, the open brows (the next
+ * loader spends over a tenth of its shift waiting for a brow), or little gain.
+ * A limit of 0 means even one loader keeps the operator above the ceiling.
  */
-export function operatorLimit(results, knee, p) {
+export function operatorLimit(results, knee, p, shiftSeconds = p.shiftHours * 3600) {
+  if (!results.length || results.every(r => !(r.mean > 0))) return { limit: null, reason: null }
   let within = 0
   for (let i = 0; i < results.length; i++) {
     if (i && results[i].N !== results[i - 1].N + 1) break
     if (results[i].operatorBusyShare > p.operatorCeiling + 1e-9) break
     within = results[i].N
   }
-  if (!results.length || results.every(r => !(r.mean > 0))) return { limit: null, reason: null }
-  const cap = within || results[0].N
-  const limit = knee != null ? Math.min(knee, cap) : cap
+  if (!within) return { limit: 0, reason: 'none' }
+  const limit = knee != null ? Math.min(knee, within) : within
   const next = results.find(r => r.N === limit + 1)
   if (!next) return { limit: null, reason: null }
   if (next.operatorBusyShare > p.operatorCeiling + 1e-9) return { limit, reason: 'operator' }
-  return { limit, reason: limit >= p.drawpoints ? 'brows' : 'gain' }
+  const browWait = next.meanTime?.waitingDrawpoint ?? 0
+  return { limit, reason: limit >= p.drawpoints && browWait > 0.1 * shiftSeconds ? 'brows' : 'gain' }
 }

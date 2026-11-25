@@ -147,32 +147,43 @@ export function drawCharts(series, params) {
   bars('loader', series, params[0].shiftHours)
   bars('operator', series, params[0].shiftHours)
   document.querySelectorAll('.chart-data').forEach((d, i) => { d.open = open[i] ?? false })
-  // Compare the operator's load for both blasts at the larger of the two limits.
-  const n = Math.min(counts(series).at(-1), Math.max(...series.map(x => x.limit ?? counts(series).at(-1))))
+  const n = compareAt(series)
   const rows = series.map(x => x.results.find(r => r.N === n))
   const answer = byId('answer')
   answer.hidden = false
   answer.textContent = `At ${n} ${n === 1 ? 'loader' : 'loaders'} the operator is busy ${share(rows[0].operatorBusyShare)} of working time with Blast 1 and ${share(rows[1].operatorBusyShare)} with Blast 2. The ceiling is ${share(ceiling)}.`
-  headline(series, ceiling)
+  headline(series, ceiling, params.map(caseName))
 }
 const counts = series => series[0].results.map(r => r.N)
-export const limitText = limit => limit == null ? 'more than the fleets tested' : limit + (limit === 1 ? ' loader' : ' loaders')
+// Compare the operator's load for both blasts at the larger of the two limits.
+const compareAt = series => Math.max(1, Math.min(counts(series).at(-1), Math.max(...series.map(x => x.limit ?? counts(series).at(-1)))))
+export function caseName(p, i) {
+  const preset = document.getElementById('s' + i + '-preset')?.value
+  const detail = ['Fine', 'Normal', 'Coarse'].includes(preset) ? preset + ' muck' : 'X50 ' + number(p.x50, 1) + ' cm'
+  return 'Blast ' + (i + 1) + ' · ' + detail
+}
+export const limitText = limit => limit == null ? 'More than the fleets tested' : limit === 0 ? 'No tested fleet' : limit + (limit === 1 ? ' loader' : ' loaders')
+export const seconds = value => value == null ? '—' : value < 90 ? number(value) + ' s' : number(value / 60, 1) + ' min'
 export function reasonText(results, limit, reason, ceiling) {
   const next = results.find(r => r.N === limit + 1)
+  if (reason === 'none') return `Even one loader keeps the operator above the ${share(ceiling)} ceiling`
   if (reason === 'operator') return `A ${ordinal(limit + 1)} loader would keep the operator ${share(next.operatorBusyShare)} busy, above the ${share(ceiling)} ceiling`
   if (reason === 'brows') return 'Every open brow is in use, so another loader mostly waits for a brow'
   return 'Another loader adds under 10% to mean tonnes'
 }
 const ordinal = n => n + (['th', 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] ?? 'th')
-function headline(series, ceiling) {
+function headline(series, ceiling, names) {
   const list = byId('headline-result')
   list.replaceChildren()
+  const n = compareAt(series)
   series.forEach(({ results, limit, reason }, i) => {
     const item = html(list, 'div')
-    html(item, 'dt', 'Blast ' + (i + 1))
+    html(item, 'dt', names[i])
     const value = html(item, 'dd', results.every(r => r.mean === 0) ? 'No tonnes' : limitText(limit))
     if (limit != null) html(value, 'small', reasonText(results, limit, reason, ceiling) + '.')
+    const row = results.find(r => r.N === n)
+    if (row) html(value, 'small', `At ${n} ${n === 1 ? 'loader' : 'loaders'} the operator is ${share(row.operatorBusyShare)} busy. 9 in 10 fills start within ${seconds(row.waitP90.fill)} of a loader joining the queue, and 9 in 10 resets within ${seconds(row.waitP90.reset)}.`)
   })
-  byId('headline-reason').textContent = `How many loaders one operator can run with each blast. The limit is the largest fleet that keeps the operator at or below ${share(ceiling)} busy over working time, unless the next loader already adds under 10%. The ceiling is an assumption you can change under Automation.`
+  byId('headline-reason').textContent = `How many loaders one operator can run with each blast, in this simulation. The limit is the largest fleet that keeps the operator at or below ${share(ceiling)} busy over working time, unless the next loader already adds under 10%. The ceiling is an assumption you can change under Automation.`
   byId('headline').hidden = false
 }

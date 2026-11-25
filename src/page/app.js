@@ -1,4 +1,4 @@
-import { createParams, validateParams, tonnesPerBucket, costCheck } from '../engine/index.js'
+import { createParams, validateParams, tonnesPerBucket, costCheck, anchorDefaults } from '../engine/index.js'
 import { setupControls, inputScenarios, showIssues, assumptions, byId, costKeys } from './controls.js'
 import { drawCharts, number, tonnes, share } from './charts.js'
 import { setupCapacityMap } from './capacity-map.js'
@@ -15,12 +15,14 @@ const currency = (n, digits) => n.toLocaleString('en-AU', {
 })
 function metrics(id, entries) {
   const root = byId(id)
-  root.replaceChildren(...entries.map(([name, value]) => {
+  root.replaceChildren(...entries.map(([name, value, label, note]) => {
     const item = document.createElement('div')
     const dt = document.createElement('dt')
     dt.textContent = name
     const dd = document.createElement('dd')
     dd.textContent = value
+    if (label) dd.insertAdjacentHTML('beforeend', ' <span class="badge" title="' + { A: 'Assumed', C: 'Calibrated', V: 'Verified' }[label] + '">' + label + '</span>')
+    if (note) dd.append(Object.assign(document.createElement('small'), { textContent: note }))
     item.append(dt, dd)
     return item
   }))
@@ -43,9 +45,13 @@ function render(params, series) {
   params.forEach((p, i) => {
     const payload = tonnesPerBucket(p.bucketVolume, p.looseDensity, p.fillFactor, p.capacity)
     byId('s' + i + '-range').hidden = !p.outsideRange
-    metrics('s' + i + '-metrics', [['X50', number(p.x50, 1) + ' cm'], ['Fill time', number(p.fillTime, 1) + ' s'],
-      ['Fill factor', share(p.fillFactor)], ['Hang-ups / 100', number(p.hangUpsPer100, 2)],
-      ['Tonnes / bucket', payload.tonnes.toLocaleString('en-AU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' t']])
+    const preset = byId('s' + i + '-preset').value
+    const anchor = anchorDefaults[preset]
+    const label = key => anchor ? anchor[key].label : 'A'
+    const formula = number(p.bucketVolume, 1) + ' m³ × ' + number(p.looseDensity, 2) + ' t/m³ × ' + share(p.fillFactor) + (payload.capped ? ', capped at ' + number(p.capacity, 1) + ' t' : '')
+    metrics('s' + i + '-metrics', [['X50', number(p.x50, 1) + ' cm', label('x50')], ['Fill time', number(p.fillTime, 1) + ' s', label('fillTime')],
+      ['Fill factor', share(p.fillFactor), label('fillFactor')], ['Hang-ups / 100', number(p.hangUpsPer100, 2), p.useOversize ? 'A' : label('hangUpsPer100')],
+      ['Tonnes / bucket', payload.tonnes.toLocaleString('en-AU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' t', null, formula]])
   })
   drawCharts(series, params)
   updateCost(params, series)

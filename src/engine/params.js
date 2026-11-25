@@ -44,13 +44,13 @@ export const anchorDefaults = {
   },
   Normal: {
     x50: assumed(25, 'cm', anchorSource),
-    fillTime: calibrated(45, 's', 'Tariq et al. (2025), 21 t semi-autonomous LHDs at Kiirunavaara. Median loading duration 50 s, including takeover.', tariq),
+    fillTime: calibrated(41, 's', 'Tariq et al. (2025), 21 t semi-autonomous LHDs at Kiirunavaara. Measured median loading duration 50 s from takeover to re-activation. A 41 s mean fill plus the 10 s takeover gives a modelled median of 50 s.', tariq),
     fillFactor: calibrated(0.90, 'fraction', 'Tampier et al. (2021), autonomous loading reached about 90% fill.', tampier),
     hangUpsPer100: assumed(1.0, 'events/100 buckets', anchorSource)
   },
   Coarse: {
     x50: assumed(40, 'cm', anchorSource),
-    fillTime: calibrated(70, 's', 'Normal x 1.56. Cottee (2001) open pit analogue, where finer blasting cut dig time by 36%.'),
+    fillTime: calibrated(64, 's', 'Normal x 1.56. Cottee (2001) open pit analogue, where finer blasting cut dig time by 36%.'),
     fillFactor: calibrated(0.82, 'fraction', 'Normal / 1.10. Cottee (2001) open pit analogue, where finer blasting raised payload by 10%.'),
     hangUpsPer100: assumed(3.0, 'events/100 buckets', anchorSource)
   }
@@ -70,11 +70,12 @@ export const defaults = {
   bucketVolume: verified(machine.buckets[0].volume, 'm³', machineSource),
   maxDensityKgM3: verified(machine.buckets[0].maxDensityKgM3, 'kg/m³', machineSource),
   capacity: verified(machine.capacity, 't', machineSource),
-  dumpTime: verified(machine.dumpTime, 's', machineSource),
+  dumpTime: verified(machine.dumpTime, 's', machineSource + ' Hydraulic bucket tip only.'),
+  dumpManoeuvreSeconds: assumed(10, 's', 'Assumed time to raise the bucket, settle at the tip and lower the bucket, besides the hydraulic tip. Not measured.'),
   looseDensity: assumed(2, 't/m³', 'Typical blasted gold ore, site input.'),
   speedLoaded: assumed(10, 'km/h', 'Assumed below the LH621i third gear speed.'),
   speedEmpty: assumed(12, 'km/h', 'Assumed below the LH621i third gear speed.'),
-  distance: assumed(150, 'm'), positioningTime: assumed(30, 's'),
+  distance: assumed(150, 'm'), positioningTime: assumed(30, 's', 'Assumed time to slow down and line up at the brow before the operator takes over.'),
   fragmentationMode: assumed('direct', 'mode', 'Choose a loading class, a measured size or the rough guide.'),
   table: assumed(anchorTable, 'cm, s, fraction, events/100 buckets', 'See the source for each anchor cell.'),
   x50: anchorDefaults.Normal.x50,
@@ -165,7 +166,7 @@ export function validateParams(overrides = {}) {
     speedLoaded: 'Loaded speed', speedEmpty: 'Empty speed', shiftHours: 'Shift length',
     dutyBlockMinutes: 'Duty block length', inSituDensity: 'In-situ density' }
   const nonnegative = { takeoverSeconds: 'Takeover time', autoStopsPerHour: 'Auto-stop rate', autoStopResetMinutes: 'Reset time',
-    distance: 'Tram distance', dumpTime: 'Dump time', positioningTime: 'Positioning time',
+    distance: 'Tram distance', dumpTime: 'Bucket tip time', dumpManoeuvreSeconds: 'Dump raise and lower time', positioningTime: 'Positioning time',
     handoverMinutes: 'Handover time', cribMinutes: 'Crib break', clearMinutes: 'Clearing time', blockMinutes: 'Block time',
     relocationMinutes: 'Relocation time', fillCV: 'Fill time CV', tripCV: 'Trip time CV',
     explosivePrice: 'Explosive price', oversizeSize: 'Oversize size', oversizeFactor: 'Oversize multiplier' }

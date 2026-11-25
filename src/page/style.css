@@ -176,9 +176,12 @@ a { color: #075d49; text-underline-offset: .17em }
 }
 .headline { border-left: 4px solid var(--teal); margin-bottom: 1.25rem }
 .headline h2 { font-size: 1.05rem; color: var(--muted); font-weight: 600; margin-bottom: .5rem }
-.headline-result { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .75rem; margin: 0 0 .75rem }
+.headline-result { display: grid; grid-template-columns: repeat(auto-fit,minmax(15rem,1fr)); gap: .75rem; margin: 0 0 .75rem }
 .headline-result div { background: #f5f7f3; border-radius: .45rem; padding: .7rem .8rem }
 .headline-result dt { font-size: .85rem; font-weight: 650; color: var(--teal) }
 .headline-result div:nth-child(2) dt { color: var(--clay) }
 .headline-result dd { margin: .2rem 0 0; font-size: 1.55rem; font-weight: 700; line-height: 1.15 }
 .headline-result dd small { display: block; font-size: .82rem; font-weight: 500; color: var(--muted); margin-top: .25rem }
+.capacity-cell[data-limit="0"] { background: #f6f1e6; color: #6b5a3a }
+.metrics dd .badge { margin-left: .3rem; vertical-align: middle }
+.metrics dd small { display: block; font-size: .75rem; font-weight: 400; color: var(--muted); margin-top: .15rem }

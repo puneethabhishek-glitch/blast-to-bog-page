@@ -1,5 +1,5 @@
-export function autonomousTime({ distance, speedLoaded, speedEmpty, dumpTime, positioningTime }) {
-  return distance / (speedLoaded / 3.6) + distance / (speedEmpty / 3.6) + dumpTime + positioningTime
+export function autonomousTime({ distance, speedLoaded, speedEmpty, dumpTime, dumpManoeuvreSeconds = 0, positioningTime }) {
+  return distance / (speedLoaded / 3.6) + distance / (speedEmpty / 3.6) + dumpTime + dumpManoeuvreSeconds + positioningTime
 }
 
 export function tonnesPerBucket(bucket, looseDensity, fillFactor, capacity) {

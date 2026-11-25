@@ -193,7 +193,9 @@ export function setupReplay() {
       hangUps = plans.flatMap(p => p.timeline.hangUps).sort((a, b) => a.time - b.time)
       byId('transport').disabled = false
       const brows = params[0].drawpoints, spare = brows - count
-      byId('replay-note').textContent = 'This replays one simulated shift. The chart numbers above come from ' + number(params[0].shifts) + ' shifts.' +
+      const over = series.map((s, i) => s.limit != null && count > s.limit ? 'Blast ' + (i + 1) + ' (limit ' + s.limit + ')' : null).filter(Boolean)
+      takeaway.textContent += over.length ? ' This fleet is above the operator limit for ' + over.join(' and ') + ', so watch the queue grow.' : ''
+      byId('replay-note').textContent = 'Schematic plan, not to a real level. Passing bays at every junction and at the dump are assumed. This replays one simulated shift. The chart numbers above come from ' + number(params[0].shifts) + ' shifts.' +
         (spare > 0 ? ' Each loader has its own home brow, so with ' + count + (count === 1 ? ' loader ' : ' loaders ') +
           (spare === 1 ? 'one brow is spare. It is' : spare + ' brows are spare. They are') + ' used only when another brow closes for a rockbreaker.' : '')
       lastClock = null
