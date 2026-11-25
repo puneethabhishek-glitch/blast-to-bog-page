@@ -63,6 +63,7 @@ function stop(i) {
 function calculate(raw, i) {
   const inputs = { ...raw }
   for (const key of costKeys) delete inputs[key]
+  if (inputs.fragmentationMode !== 'kuzRam') delete inputs.K_kg_per_m3
   const key = JSON.stringify(inputs)
   if (cache[i]?.key === key) return Promise.resolve(cache[i].result)
   const worker = workers[i] ??= new Worker(new URL('./worker.js', import.meta.url), { type: 'module' })

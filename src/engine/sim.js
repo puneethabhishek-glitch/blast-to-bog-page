@@ -1,9 +1,10 @@
 import { createParams, validateParams, defaults } from './params.js'
 import { createRng, exponential, lognormalSampler, nextPoissonArrival } from './rng.js'
 import { autonomousTime, tonnesPerBucket } from './loader.js'
+import { roadLayout, trafficController } from './road.js'
 import { EventQueue } from './event-queue.js'
 
-const emptyTimes = () => ({ filling: 0, driving: 0, waitingOperator: 0, waitingDrawpoint: 0, blocked: 0, stopped: 0, idle: 0 })
+const emptyTimes = () => ({ filling: 0, driving: 0, waitingOperator: 0, waitingDrawpoint: 0, blocked: 0, traffic: 0, stopped: 0, idle: 0 })
 const timeAccounts = Object.keys(emptyTimes())
 const emptyOperator = () => ({ filling: 0, clearing: 0, otherDuties: 0, takeover: 0, resets: 0 })
 const operatorAccounts = Object.keys(emptyOperator())
@@ -22,7 +23,7 @@ function prepare(params, distribution) {
   const trip = autonomousTime(p)
   const loadedAndDump = p.distance / (p.speedLoaded / 3.6) + p.dumpTime
   return {
-    p, end: p.shiftHours * 3600, dumpFraction: trip > 0 ? loadedAndDump / trip : 0,
+    p, trip, layout: p.trafficModel ? roadLayout(p.distance, p.drawpoints) : null, end: p.shiftHours * 3600, dumpFraction: trip > 0 ? loadedAndDump / trip : 0,
     fillTime: sampler(distribution, p.fillTime, p.fillCV), tripTime: sampler(distribution, trip, p.tripCV),
     payload: tonnesPerBucket(p.bucketVolume, p.looseDensity, p.fillFactor, p.capacity).tonnes
   }
@@ -39,8 +40,11 @@ function shift(config, N, seed, record) {
   const eventLog = []
   const loaders = Array.from({ length: N }, (_, id) => ({
     id, home: id % p.drawpoints, point: id % p.drawpoints, state: 'idle', since: 0,
-    buckets: 0, times: emptyTimes()
+    buckets: 0, times: emptyTimes(), node: 0, lane: null, path: null, step: 0, toward: 0,
+    roadSpeed: 0, velocity: 0, progress: 0, loaded: false, moveMode: 'driving', roadDone: '',
+    stopLeft: Infinity, dwellDone: '', dwellLeft: 0, tripScale: 1, dumpsAt: 0, returnsAt: 0, dumped: false, returnPoint: 0
   }))
+  const blocked = Array(p.drawpoints).fill(false)
   const free = Array(p.drawpoints).fill(true)
   let freeCount = p.drawpoints
   const jobs = [] // Loader objects and null duty jobs in FCFS order.
@@ -55,10 +59,39 @@ function shift(config, N, seed, record) {
   let rockbreakers = 0
   let buckets = 0
 
+  const B = p.drawpoints
+  const road = p.trafficModel && trafficController(config.layout, p.minGapMetres, {
+    state, schedule, log, record, simultaneous: time => events.items[0]?.time === time, stop: stopLoader, closed: point => blocked[point]
+  })
+  function stopLoader(l) {
+    state(l, 'stopped')
+    log('autoStop', l, null)
+    if (p.resetPriority) {
+      const firstFill = jobs.findIndex(job => job?.state !== 'stopped')
+      jobs.splice(firstFill < 0 ? jobs.length : firstFill, 0, l)
+    } else jobs.push(l)
+  }
+  function haul(l, destination, loaded, done) {
+    const speed = (loaded ? p.speedLoaded : p.speedEmpty) / (3.6 * l.tripScale)
+    road.start(l, destination, speed, loaded, 'driving', done, now)
+  }
+  function dwell(l, duration, done) {
+    road.parked(l, 'driving')
+    l.dwellDone = done
+    if (l.stopLeft < duration) {
+      l.dwellLeft = duration - l.stopLeft
+      schedule(now + l.stopLeft, 'autoStop', l)
+    } else {
+      l.dwellLeft = 0
+      l.stopLeft -= duration
+      schedule(now + duration, done, l)
+    }
+  }
   function log(type, l = null, point = l?.point ?? null, details) {
     if (record) eventLog.push({ time: now, loader: l?.id ?? null, drawpoint: point, type, ...details })
   }
   function state(l, next) {
+    if (road && l.state === next) return
     l.times[l.state] += now - l.since
     l.since = now
     l.state = next
@@ -69,37 +102,78 @@ function shift(config, N, seed, record) {
   function firstFree(preferred) {
     return free[preferred] ? preferred : free.indexOf(true)
   }
+  function chooseBrow(preferred) {
+    if (!blocked[preferred]) return preferred
+    const open = free.indexOf(true)
+    if (open >= 0) return open
+    const available = blocked.indexOf(false)
+    return available >= 0 ? available : preferred
+  }
   function join(l) {
+    if (road) {
+      const target = chooseBrow(l.point)
+      if (target !== l.point) return relocate(l, target)
+      if (!blocked[l.point] && l.node <= B) {
+        l.stopLeft = Infinity
+        road.start(l, B + l.point + 1, p.speedEmpty / 3.6, false, 'driving', 'approached', now)
+        return
+      }
+    }
     if (!freeCount) {
       state(l, 'waitingDrawpoint')
       awaitingPoint.push(l)
       log('waitingDrawpoint', l)
       return
     }
-    l.point = firstFree(l.point)
+    if (!road) l.point = firstFree(l.point)
     state(l, 'waitingOperator')
     jobs.push(l)
     log('queued', l)
   }
   function relocate(l, target) {
+    if (road) state(l, 'blocked')
     const from = l.point
     l.point = target
+    if (road) {
+      const dest = B + target + 1
+      // Drive at normal empty speed. The rest of the relocation time is spent at the new brow.
+      const speed = p.speedEmpty / 3.6
+      if (record) log('relocating', l, target, { from, road: true })
+      l.stopLeft = Infinity
+      l.blockedAtDeparture = l.times.blocked + now - l.since
+      road.start(l, dest, speed, false, 'blocked', 'relocationTravelDone', now)
+      return
+    }
     const arrivesAt = now + p.relocationMinutes * 60
     if (record) log('relocating', l, target, { from, arrivesAt })
     schedule(arrivesAt, 'relocated', l)
+  }
+  // Queued loaders stay at their brow while it is busy. Only a closure forces a move.
+  function refreshBrowQueue() {
+    for (let i = 0; i < jobs.length; i++) {
+      const l = jobs[i]
+      if (!l || l.state === 'stopped') continue
+      if (blocked[l.point]) {
+        jobs.splice(i--, 1)
+        relocate(l, chooseBrow(l.point))
+      } else if (l.state === 'waitingDrawpoint') {
+        state(l, 'waitingOperator')
+        log('waitingOperator', l)
+      }
+    }
   }
   function release(point) {
     free[point] = true
     freeCount++
     if (freeCount === 1) {
-      // Already-admitted jobs retain their queue rank across a point closure.
-      for (const l of jobs) if (l && l.state !== 'stopped') {
+      if (road) refreshBrowQueue()
+      else for (const l of jobs) if (l && l.state !== 'stopped') {
         l.point = point
         state(l, 'waitingOperator')
         log('waitingOperator', l)
       }
       for (const l of awaitingPoint) {
-        if (l.state === 'blocked' && point !== l.point) relocate(l, point)
+        if (!road && l.state === 'blocked' && point !== l.point) relocate(l, point)
         else join(l)
       }
       awaitingPoint.length = 0
@@ -155,7 +229,7 @@ function shift(config, N, seed, record) {
       schedule(now + duration, 'resumed', job)
       return
     }
-    job.point = firstFree(job.point)
+    if (!road) job.point = firstFree(job.point)
     free[job.point] = false
     freeCount--
     if (!freeCount) {
@@ -172,13 +246,33 @@ function shift(config, N, seed, record) {
     log('handoverStarted')
     schedule(p.handoverMinutes * 60, 'handoverDone')
   }
-  for (const l of loaders) join(l)
+  for (const l of loaders) {
+    if (road) {
+      l.node = (l.id < B ? B : 0) + l.point + 1
+      if (l.id < B) road.occupy(l)
+      l.stopLeft = Infinity
+      road.parked(l, 'idle')
+    }
+    join(l)
+  }
   schedule(nextPoissonArrival(rng, 0, dutyRate), 'duty')
   dispatch()
   while (events.items.length) {
     const { time, type, loader: l, point } = events.pop()
     now = time
     switch (type) {
+      case 'lane':
+        road.tick(point, now)
+        break
+      case 'atDump':
+        dwell(l, p.dumpTime * l.tripScale, 'dumped')
+        break
+      case 'atReturn':
+        dwell(l, p.positioningTime * l.tripScale, 'returned')
+        break
+      case 'approached':
+        join(l)
+        break
       case 'handoverDone':
       case 'dutyDone':
         busy = false
@@ -204,19 +298,32 @@ function shift(config, N, seed, record) {
         }
         rockbreakers++
         busy = false
+        blocked[l.point] = true
         log('rockbreaker', l)
+        if (road) road.refresh(l.point, now)
         schedule(now + p.blockMinutes * 60, 'unblocked', null, l.point)
         if (freeCount) {
           relocate(l, firstFree(l.home))
+          if (road) refreshBrowQueue()
         } else {
           awaitingPoint.push(l) // Stay blocked until a point opens.
           log('awaitingUnblock', l)
         }
         break
       case 'unblocked':
+        blocked[point] = false
         log('unblocked', null, point)
         release(point)
+        if (road) road.refresh(point, now)
         break
+      case 'relocationTravelDone': {
+        // A second closure can cut off the last crosscut. Finish the configured
+        // relocation work in the bay. Time queueing for lanes remains traffic.
+        road.parked(l, 'blocked')
+        const work = l.times.blocked + now - l.since - l.blockedAtDeparture
+        schedule(now + Math.max(0, p.relocationMinutes * 60 - work), 'relocated', l)
+        break
+      }
       case 'relocated':
         log('relocated', l)
         join(l)
@@ -227,21 +334,35 @@ function shift(config, N, seed, record) {
         const duration = tripTime(rng)
         const dumpsAt = now + duration * dumpFraction
         const returnsAt = now + duration
-        if (record) log('departedLoaded', l, l.point, { dumpsAt, returnsAt, returnPoint: l.home })
+        if (record) {
+          // Provisional destination for a trip clipped before its dump. Once this
+          // loader departs, the single operator holds no brow.
+          const returnPoint = road && blocked[l.home] ? blocked.indexOf(false) : l.home
+          log('departedLoaded', l, l.point, { dumpsAt, returnsAt, returnPoint })
+        }
         l.dumpsAt = dumpsAt
         l.returnsAt = returnsAt
         l.dumped = false
-        travel(l)
+        if (road) {
+          l.tripScale = config.trip > 0 ? duration / config.trip : 1
+          l.stopLeft = nextPoissonArrival(rng, 0, stopRate)
+          haul(l, 0, true, 'atDump')
+        } else travel(l)
         release(l.point)
         break
       }
       case 'autoStop':
-        state(l, 'stopped')
-        log('autoStop', l, null)
-        jobs.push(l)
+        stopLoader(l)
         break
       case 'resumed': {
         busy = false
+        if (road) {
+          l.stopLeft = nextPoissonArrival(rng, 0, stopRate)
+          log('resumed', l, null)
+          if (l.lane) road.resume(l, now)
+          else dwell(l, l.dwellLeft, l.dwellDone)
+          break
+        }
         const delay = now - l.since
         if (!l.dumped) l.dumpsAt += delay
         l.returnsAt += delay
@@ -252,12 +373,14 @@ function shift(config, N, seed, record) {
       }
       case 'dumped':
         l.dumped = true
+        l.returnPoint = road ? chooseBrow(l.home) : l.home
         l.buckets++
         buckets++
-        if (record) log('dumped', l, l.point, { buckets, tonnes: buckets * payload })
+        if (record) log('dumped', l, l.point, road ? { buckets, tonnes: buckets * payload, returnPoint: l.returnPoint } : { buckets, tonnes: buckets * payload })
+        if (road) haul(l, B + l.returnPoint + 1, false, 'atReturn')
         break
       case 'returned':
-        l.point = l.home
+        l.point = l.returnPoint
         log('returned', l)
         join(l)
         break
@@ -270,7 +393,7 @@ function shift(config, N, seed, record) {
     l.times[l.state] += end - l.since
     return { id: l.id, buckets: l.buckets, tonnes: l.buckets * payload, ...l.times }
   })
-  return { loaders: totals, operator, hangUps, rockbreakers, buckets, tonnes: buckets * payload, eventLog }
+  return { ...(road && record ? { layout: config.layout } : {}), ...(p.resetPriority ? { resetPriority: true } : {}), loaders: totals, operator, hangUps, rockbreakers, buckets, tonnes: buckets * payload, eventLog }
 }
 
 /** Replay logs use zero-based IDs and seconds since shift start. */

@@ -51,12 +51,14 @@ h3 { font-size: 1.05rem }
 .plan:nth-child(2) h3 { color: var(--clay) }
 .level { display: block; width: 100%; background: #f2f5f0; border-radius: .38rem }
 .level text { font: 600 13px system-ui; text-anchor: middle; fill: #364e40 }
-.level .machine text { fill: white; font: bold 13px system-ui }
+.level .machine text { fill: white; font: bold 10px system-ui }
 .machine rect { stroke: white; stroke-width: 1 }
 .filling { fill: #304e70; background: #304e70 }
 .driving { fill: #267562; background: #267562 }
 .waitingOperator { fill: #865821; background: #865821 }
 .waitingDrawpoint { fill: #526979; background: #526979 }
+.level .machine .stop-timer { fill: #452d55; font: bold 9px system-ui; paint-order: stroke; stroke: white; stroke-width: 2px }
+.traffic { fill: #80601e; background: #80601e }
 .stopped { fill: #74548e; background: #74548e }
 #capacity-map > .muted { margin-top: .4rem }
 #map-progress { font-size: .85rem; color: var(--muted) }

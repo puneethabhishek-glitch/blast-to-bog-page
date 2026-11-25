@@ -93,6 +93,9 @@ export const defaults = {
   D_mm: assumed(89, 'mm', kuzSource), W_m: assumed(0.2, 'm', kuzSource),
   L_m: assumed(12, 'm', kuzSource), H_m: assumed(15, 'm', kuzSource),
   takeoverSeconds: { ...assumed(10, 's', 'Assumed share of the measured loading duration. Tariq et al. (2025) report takeover, filling and re-activation together.'), sourceUrl: tariq },
+  trafficModel: assumed(true, 'on/off', 'Single lane drive. Loaded loaders have right of way. Passing only at brow junctions.'),
+  minGapMetres: assumed(20, 'm', 'Minimum separation on a shared drive segment or crosscut.'),
+  resetPriority: assumed(true, 'on/off', 'Assumed. Operators usually clear a stopped machine before the next fill.'),
   autoStopsPerHour: assumed(0.5, 'stops/trip hour', 'Assumed. Safety scanner stops, path faults and similar.'),
   autoStopResetMinutes: assumed(2, 'min'),
   clearMinutes: assumed(4, 'min'), rockbreakerShare: assumed(0.30, 'fraction'),
@@ -101,7 +104,7 @@ export const defaults = {
   handoverMinutes: assumed(15, 'min'), dutyShare: assumed(0.10, 'fraction'),
   dutyBlockMinutes: assumed(3, 'min', 'Assumed duration of each other-duty job.'),
   fillCV: assumed(0.20, 'CV', variability), tripCV: assumed(0.10, 'CV', variability),
-  drawpoints: assumed(3, 'brows'), shifts: assumed(500, 'shifts'),
+  drawpoints: assumed(4, 'brows', 'One open brow per loader up to the largest fleet compared.'), shifts: assumed(500, 'shifts'),
   explosivePrice: assumed(1.50, '$/kg', 'Assumed price, no public WA price.'),
   inSituDensity: assumed(2.8, 't/m³')
 }
@@ -117,6 +120,7 @@ export const comparisonDefaults = {
 /** Resolve raw overrides. Model/bucket selection and anchors supply dependent defaults. */
 export function createParams(overrides = {}) {
   const p = { ...values, ...overrides }
+  p.resetPriority = overrides.resetPriority ?? p.trafficModel
   const model = loaderOptions[p.loaderModel]
   const selected = model?.buckets?.[p.bucketIndex]
   if (!Number.isInteger(p.bucketIndex) || !selected) throw new RangeError('Select a listed loader model and bucket.')
@@ -154,7 +158,8 @@ export function validateParams(overrides = {}) {
   function check(valid, message, field) {
     if (!valid) issues.push({ severity: 'error', message, field })
   }
-  const positive = { fillTime: 'Fill time', fillFactor: 'Fill factor', looseDensity: 'Loose density',
+  for (const key of ['trafficModel', 'resetPriority']) check(typeof p[key] === 'boolean', 'Choose on or off.', key)
+  const positive = { minGapMetres: 'Traffic separation', fillTime: 'Fill time', fillFactor: 'Fill factor', looseDensity: 'Loose density',
     speedLoaded: 'Loaded speed', speedEmpty: 'Empty speed', shiftHours: 'Shift length',
     dutyBlockMinutes: 'Duty block length', inSituDensity: 'In-situ density' }
   const nonnegative = { takeoverSeconds: 'Takeover time', autoStopsPerHour: 'Auto-stop rate', autoStopResetMinutes: 'Reset time',

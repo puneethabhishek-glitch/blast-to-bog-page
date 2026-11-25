@@ -1,44 +1,13 @@
 import { comparisonDefaults, simulateShift } from '../engine/index.js'
 import { byId } from './controls.js'
 import { mark, number, tonnes } from './charts.js'
-import { afterTime, atTime, buildTimeline, DUMP, queueTakeaway, routeFraction } from './timeline.js'
+import { afterTime, atTime, buildTimeline, queueTakeaway } from './timeline.js'
+import { ICON, SLOTS, planGeometry, planPosition } from './road-position.js'
+
 
 function clock(seconds) {
   const minutes = Math.floor(seconds / 60)
   return [Math.floor(minutes / 60), minutes % 60].map(n => String(n).padStart(2, '0')).join(':')
-}
-
-const driveY = 101
-const berthY = 49
-const dumpX = 24
-
-// Schematic distances: travel at constant speed along each orthogonal route.
-function route(from, to, points) {
-  const start = from === DUMP ? [dumpX, driveY] : [points[from], berthY]
-  const end = to === DUMP ? [dumpX, driveY] : [points[to], berthY]
-  const corners = [start, [start[0], driveY], [end[0], driveY], end]
-  const legs = []
-  let length = 0
-  for (let i = 1; i < corners.length; i++) {
-    const [x, y] = corners[i - 1]
-    const dx = corners[i][0] - x, dy = corners[i][1] - y
-    const size = Math.abs(dx) + Math.abs(dy)
-    if (size) legs.push({ x, y, dx, dy, size, start: length })
-    length += size
-  }
-  return { start, legs, length: from === to ? 0 : length }
-}
-
-function move(machine, path, fraction) {
-  let [x, y] = path.start
-  if (path.length) {
-    const distance = path.length * Math.min(1, Math.max(0, fraction))
-    const leg = path.legs.find(s => distance <= s.start + s.size) ?? path.legs.at(-1)
-    const part = (distance - leg.start) / leg.size
-    x = leg.x + leg.dx * part
-    y = leg.y + leg.dy * part
-  }
-  machine.group.style.transform = `translate(${x + machine.dx}px, ${y + machine.dy}px)`
 }
 
 function pulse(node) {
@@ -48,46 +17,69 @@ function pulse(node) {
 function createPlan(index, timeline, drawpoints, shifts, mean) {
   const root = document.createElement('article')
   root.className = 'plan'
-  root.innerHTML = `<h3>Blast ${index + 1}</h3><svg class="level" viewBox="0 0 320 132" role="img" aria-label="Blast ${index + 1} level plan"></svg>
+  root.innerHTML = `<h3>Blast ${index + 1}</h3><svg class="level" viewBox="0 0 320 240" role="img" aria-label="Blast ${index + 1} level plan"></svg>
     <div class="plan-status"><p>Operator: <strong class="operator"></strong></p><p>Queue: <span class="queue"></span></p></div>
     <dl class="metrics"><div><dt>Shift clock</dt><dd class="clock"></dd></div><div><dt>Buckets dumped</dt><dd class="buckets"></dd></div><div><dt>Tonnes so far</dt><dd class="tonnes"></dd></div></dl>
     <div class="comparison-totals"><span>This shift <strong>${tonnes(timeline.tonnes)} t</strong></span><span>${number(shifts)}-shift mean <strong>${tonnes(mean)} t</strong></span></div>`
   const svg = root.querySelector('svg')
-  const points = Array.from({ length: drawpoints }, (_, i) => 86 + i * 208 / (drawpoints - 1))
-  const road = `M${dumpX} ${driveY} H298 ` + points.map(x => `M${x} ${driveY} V${berthY}`).join(' ')
-  for (const [stroke, width] of [['#a8b6a9', 24], ['#dce4da', 21]]) {
-    mark(svg, 'path', { d: road, fill: 'none', stroke, 'stroke-width': width, 'stroke-linecap': 'round' })
-  }
-  mark(svg, 'path', { d: road, fill: 'none', stroke: '#abbba9', 'stroke-dasharray': '3 4' })
-  mark(svg, 'rect', { x: dumpX - 18, y: driveY - 15, width: 36, height: 30, rx: 4, fill: '#d0b49b' })
-  mark(svg, 'text', { x: dumpX, y: 81 }, 'Dump')
   const faces = [], crosses = []
-  for (const [i, x] of points.entries()) {
-    mark(svg, 'text', { x, y: 20 }, 'Brow ' + (i + 1))
-    faces.push(mark(svg, 'rect', { x: x - 19, y: berthY - 16, width: 38, height: 32, rx: 5, fill: '#d6e2d4', stroke: '#9aac9b' }))
-    crosses.push(mark(svg, 'path', { d: `M${x-5} 68 l10 10 m0 -10 l-10 10`, stroke: '#b2242c', 'stroke-width': 4, display: 'none' }))
+  const g = timeline.layout && planGeometry(timeline.layout)
+  if (g) {
+    svg.setAttribute('viewBox', `0 0 ${g.width} ${Math.ceil(g.height)}`)
+    const [dumpX, driveY] = g.px(0), endX = g.px(drawpoints)[0]
+    // Widened passing areas at the dump and each junction. Roads draw over them.
+    const upper = timeline.loaders.length > 2
+    for (let j = 0; j <= drawpoints; j++) {
+      const [x, y] = g.px(j)
+      mark(svg, 'rect', { x: x - 30, y: y - (upper ? 25 : 9), width: 60, height: upper ? 50 : 34, rx: 9, fill: '#e4eae2', stroke: '#c3cfc1' })
+    }
+    let road = `M${dumpX} ${driveY} H${endX}`
+    for (let j = 1; j <= drawpoints; j++) {
+      const [x, y] = g.px(j), [, faceY] = g.px(drawpoints + j)
+      road += ` M${x} ${y} V${faceY}`
+    }
+    for (const [stroke, width] of [['#a8b6a9', 15], ['#dce4da', 12]]) {
+      mark(svg, 'path', { d: road, fill: 'none', stroke, 'stroke-width': width, 'stroke-linecap': 'round' })
+    }
+    mark(svg, 'path', { d: road, fill: 'none', stroke: '#abbba9', 'stroke-dasharray': '3 4' })
+    mark(svg, 'rect', { x: dumpX - 14, y: driveY - 11, width: 28, height: 22, rx: 4, fill: '#d0b49b' })
+    mark(svg, 'text', { x: dumpX, y: driveY - 30 }, 'Dump')
+    for (let j = 1; j <= drawpoints; j++) {
+      const [x, y] = g.px(drawpoints + j)
+      mark(svg, 'text', { x, y: y - 17 }, 'Brow ' + j)
+      faces.push(mark(svg, 'rect', { x: x - 14, y: y - 11, width: 28, height: 18, rx: 4, fill: '#d6e2d4', stroke: '#9aac9b' }))
+      crosses.push(mark(svg, 'path', { d: `M${x + 14} ${y - 13} l9 9 m0 -9 l-9 9`, stroke: '#b2242c', 'stroke-width': 3.5, display: 'none' }))
+    }
+  } else {
+    svg.setAttribute('viewBox', '0 0 320 70')
+    svg.setAttribute('aria-label', 'Loader states with single lane traffic off')
+    mark(svg, 'text', { x: 160, y: 17 }, 'Traffic off · loader states')
   }
-  const paths = new Map()
   const machines = timeline.loaders.map((frames, id) => {
     const group = mark(svg, 'g', { class: 'machine' })
-    const rect = mark(group, 'rect', { x: -8.5, y: -7, width: 17, height: 14, rx: 4 })
-    mark(group, 'text', { y: 4 }, id + 1)
-    return { frames, group, rect, dx: (id % 2 ? 9 : -9), dy: (id < 2 ? -7 : 7) }
+    const rect = mark(group, 'rect', { x: -ICON.width / 2, y: -ICON.height / 2, width: ICON.width, height: ICON.height, rx: 3 })
+    mark(group, 'text', { y: 3.5 }, id + 1)
+    const timer = mark(group, 'text', { class: 'stop-timer', y: -9 }, '')
+    if (!timeline.layout) group.style.transform = `translate(${320 * (id + .5) / timeline.loaders.length}px, 50px)`
+    return { id, frames, group, rect, timer }
   })
   const fields = Object.fromEntries(['clock', 'operator', 'queue', 'buckets', 'tonnes'].map(key => [key, root.querySelector('.' + key)]))
   let lastPanel, lastDump, lastClock
   function draw(time, stamp) {
     for (const machine of machines) {
       const frame = atTime(machine.frames, time)
+      if (frame.state === 'stopped') {
+        const s = Math.floor(Math.max(0, time - frame.stoppedAt))
+        machine.timer.textContent = 'stopped ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0')
+      } else if (machine.timer.textContent) machine.timer.textContent = ''
       if (machine.frame !== frame) {
         machine.frame = frame
         machine.rect.setAttribute('class', frame.state)
-        const key = frame.from + '/' + frame.to
-        if (!paths.has(key)) paths.set(key, route(frame.from, frame.to, points))
-        machine.path = paths.get(key)
-        move(machine, machine.path, 0)
       }
-      if (machine.path.length) move(machine, machine.path, routeFraction(frame, time))
+      if (timeline.layout) {
+        const [x, y] = planPosition(g, frame, time, machine.id)
+        machine.group.style.transform = `translate(${x}px, ${y}px)`
+      }
     }
     const panel = atTime(timeline.panels, time)
     if (panel !== lastPanel) {
@@ -110,7 +102,7 @@ function createPlan(index, timeline, drawpoints, shifts, mean) {
       const event = timeline.hangUps[j]
       if (previous == null ? event.time !== time : event.time <= previous) break
       pulse(machines[event.loader].rect)
-      pulse(faces[event.drawpoint])
+      if (faces[event.drawpoint]) pulse(faces[event.drawpoint])
     }
   }
   return { root, draw, flash, timeline }

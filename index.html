@@ -88,7 +88,7 @@
       <div class="legend replay-legend">
         <span><i class="swatch filling"></i>Filling</span><span><i class="swatch driving"></i>Driving</span>
         <span><i class="swatch waitingOperator"></i>Waiting for operator</span>
-        <span><i class="swatch waitingDrawpoint"></i>Waiting for a brow</span><span><i class="swatch blocked"></i>Blocked</span><span><i class="swatch stopped"></i>Stopped for reset</span>
+        <span><i class="swatch waitingDrawpoint"></i>Waiting for a brow</span><span><i class="swatch blocked"></i>Blocked</span><span><i class="swatch stopped"></i>Stopped for reset</span><span><i class="swatch traffic"></i>Waiting for traffic</span>
       </div>
       <div class="pair" id="plans"></div>
       <p class="muted" id="replay-note"></p>
@@ -106,8 +106,9 @@
     </section>
     <details class="panel"><summary>Assumptions</summary><p>V = verified from a public source, C = calibrated, A = assumed.</p><div id="assumptions"></div></details>
     <details class="panel prose"><summary>How it works</summary>
-      <h3>The loader cycle</h3><p>The level has several stopes open at once and each loader bogs from a stope brow. One operator takes remote control at the brow before each fill and each hang-up clearing attempt. A loaded machine trams to the dump, empties its bucket and returns on its own. A bucket adds tonnes when it is dumped. A hang-up ties up the operator during clearing. If it needs a rockbreaker, the affected brow closes and the loader waits or relocates.</p>
-      <p>Auto-stops can occur during autonomous travel, dumping or positioning. The loader stays in place while its reset waits in the operator queue and during the reset itself. The operator can reset it without an open brow. Set the stop rate and remote takeover time to zero to replay the original timing.</p>
+      <h3>The loader cycle</h3><p>The level has four stopes open at once, one brow for each loader in the largest fleet compared, and each loader bogs from a stope brow. With fewer open brows a spare loader waits for one, which caps the fleet before the operator does. One operator takes remote control at the brow before each fill and each hang-up clearing attempt. A loaded machine trams to the dump, empties its bucket and returns on its own. A bucket adds tonnes when it is dumped. A hang-up ties up the operator during clearing. If it needs a rockbreaker, the affected brow closes and the loader waits or relocates.</p>
+      <p>The main drive is single lane. Every brow is the same tram distance from the dump, so a nearer junction has a longer crosscut. Loaded machines get first use of a clear segment, followers keep their separation, and opposing machines wait in passing bays at the junctions and the dump. Only one moving loader can be within 20 m of a junction or of the dump tip at a time, so a loader waits short of a busy junction. Waiting for an occupied brow counts as waiting for a brow, not as traffic. A relocating loader drives at normal speed and spends the rest of its relocation time at the new brow.</p>
+      <p>Auto-stops can occur during autonomous travel, dumping or positioning. The loader stays in place while its reset waits in the operator queue and during the reset itself. The operator can reset it without an open brow. With reset priority on, waiting resets are handled in arrival order before the next fill or duty. The current job finishes first. Turning single lane traffic off selects the v1.1 comparison and switches reset priority off. You can then turn reset priority on separately.</p>
       <h3>Two exact checks</h3><p>N is the loader count. F, T and A are the mean fill time, remote takeover time and mean autonomous trip time in seconds. With fixed times the fleet rate is limited by the loader cycles and the operator's filling rate.</p>
       <p class="formula">Buckets per hour = 3,600 × min(N / (F + T + A), 1 / (F + T))</p>
       <p>With exponential times, the machine interference formula gives the probability P₀ that the operator is idle. Set r = F / A and sum over k from 0 to N.</p>

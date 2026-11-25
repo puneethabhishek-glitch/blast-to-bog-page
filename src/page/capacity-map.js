@@ -1,4 +1,4 @@
-import { fillTimes, hangUpRates, fillFactorAtTime, mapShifts } from '../engine/capacity.js'
+import { fillTimes, hangUpRates, fillFactorAtTime, mapShiftsFor } from '../engine/capacity.js'
 import { byId } from './controls.js'
 import { number, tonnes, share } from './charts.js'
 
@@ -18,9 +18,8 @@ export function setupCapacityMap() {
   const section = byId('capacity-map'), grid = byId('map-grid'), progress = byId('map-progress')
   const cells = []
   const data = new Map()
-  let selected = 0, workers = [], signature, generation = 0
+  let selected = 0, workers = [], signature, sharedSignature, generation = 0
 
-  byId('map-note').textContent = 'Each square is ' + mapShifts + ' simulated shifts. Tap a square to see its numbers.'
   for (const f of fillTimes) byId('map-x').append(Object.assign(document.createElement('span'), { textContent: f }))
   for (const h of hangUpRates) {
     byId('map-y').append(Object.assign(document.createElement('span'), { textContent: h }))
@@ -70,6 +69,7 @@ export function setupCapacityMap() {
     const nextSignature = JSON.stringify([params, blasts])
     if (nextSignature === signature) return
     signature = nextSignature
+    byId('map-note').textContent = 'Each square is ' + mapShiftsFor(params) + ' simulated shifts. Tap a square to see its numbers.'
     const run = ++generation
     clearWorkers()
     const started = performance.now()
@@ -79,6 +79,14 @@ export function setupCapacityMap() {
       jobs.set(key, { key, fillTime, hangUpsPer100, fillFactor })
       return key
     }
+    // Cell keys already contain all three loading quantities. Reuse completed
+    // squares when a marker, anchor or cost changes but the physical inputs match.
+    const shared = { ...params }
+    for (const key of ['table', 'x50', 'x80', 'fillTime', 'fillFactor', 'hangUpsPer100', 'outsideRange',
+      'K_kg_per_m3', 'explosivePrice', 'inSituDensity']) delete shared[key]
+    const sharedKey = JSON.stringify(shared)
+    const cached = sharedKey === sharedSignature ? new Map(data) : new Map()
+    sharedSignature = sharedKey
     data.clear()
     const byKey = new Map()
     for (const cell of cells) {
@@ -113,7 +121,7 @@ export function setupCapacityMap() {
     section.dataset.state = 'running'
     progress.textContent = '0 of 70 squares'
     byId('map-answer').hidden = true
-    const list = [...jobs.values()]
+    const list = [...jobs.values()].filter(job => !cached.has(job.key))
     const lanes = Math.min(4, navigator.hardwareConcurrency || 2)
     function fail(message) {
       if (run !== generation || section.dataset.state !== 'running') return
@@ -122,29 +130,33 @@ export function setupCapacityMap() {
       section.dataset.state = 'error'
       progress.textContent = 'Map could not finish. ' + message
     }
-    for (let lane = 0; lane < lanes; lane++) {
+    function display(key, result) {
+      data.set(key, result)
+      const cell = byKey.get(key)
+      if (cell) {
+        cell.button.textContent = result.limit
+        cell.button.dataset.limit = result.limit
+        cell.button.setAttribute('aria-label', cellLabel(cell.f, cell.h) + (result.limit === '—' ? ', no production' : ', loader limit ' + result.limit))
+        progress.textContent = ++complete + ' of 70 squares'
+        if (cells[selected] === cell) select(selected)
+      }
+      if (data.size === jobs.size) {
+        clearWorkers()
+        byId('map-answer').textContent = comparison(keys.map(k => data.get(k).limit))
+        byId('map-answer').hidden = false
+        section.dataset.elapsedMs = Math.round(performance.now() - started)
+        section.dataset.state = 'ready'
+      }
+    }
+    for (const { key } of jobs.values()) if (cached.has(key)) display(key, cached.get(key))
+    for (let lane = 0; lane < Math.min(lanes, list.length); lane++) {
       const worker = new Worker(new URL('./capacity-worker.js', import.meta.url), { type: 'module' })
       workers.push(worker)
       worker.onerror = event => fail(event.message)
       worker.onmessage = ({ data: { key, result, error } }) => {
         if (run !== generation || section.dataset.state !== 'running') return
-        if (error) return fail(error)
-        data.set(key, result)
-        const cell = byKey.get(key)
-        if (cell) {
-          cell.button.textContent = result.limit
-          cell.button.dataset.limit = result.limit
-          cell.button.setAttribute('aria-label', cellLabel(cell.f, cell.h) + (result.limit === '—' ? ', no production' : ', loader limit ' + result.limit))
-          progress.textContent = ++complete + ' of 70 squares'
-          if (cells[selected] === cell) select(selected)
-        }
-        if (data.size === list.length) {
-          clearWorkers()
-          byId('map-answer').textContent = comparison(keys.map(k => data.get(k).limit))
-          byId('map-answer').hidden = false
-          section.dataset.elapsedMs = Math.round(performance.now() - started)
-          section.dataset.state = 'ready'
-        }
+        if (error) fail(error)
+        else display(key, result)
       }
       worker.postMessage({ params, jobs: list.filter((_, index) => index % lanes === lane) })
     }

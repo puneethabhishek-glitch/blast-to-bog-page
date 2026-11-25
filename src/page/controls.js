@@ -7,6 +7,7 @@ export const names = {
   L_m: 'Charge length', H_m: 'Bench or ring height', oversizePercent: 'Measured oversize',
   useOversize: 'Hang-up rate source', oversizeSize: 'Oversize threshold', oversizeFactor: 'Oversize multiplier',
   loaderModel: 'Loader model', bucketIndex: 'Bucket', looseDensity: 'Loose density', fillCV: 'Fill time variability',
+  trafficModel: 'Single lane traffic', minGapMetres: 'Minimum separation', resetPriority: 'Prioritise resets',
   takeoverSeconds: 'Remote takeover time', autoStopsPerHour: 'Auto-stops', autoStopResetMinutes: 'Reset time',
   tripCV: 'Trip time variability', distance: 'One-way tram distance', speedLoaded: 'Loaded speed', speedEmpty: 'Empty speed',
   positioningTime: 'Positioning time', clearMinutes: 'Hang-up clearing', rockbreakerShare: 'Rockbreaker share',
@@ -21,7 +22,8 @@ export const costKeys = ['explosivePrice', 'inSituDensity']
 const percentKeys = ['fillCV', 'tripCV', 'rockbreakerShare', 'dutyShare']
 const anchorKeys = ['x50', 'fillTime', 'fillFactor', 'hangUpsPer100']
 const loadingKeys = ['loaderModel', 'bucketIndex', 'looseDensity', 'fillCV']
-const automationKeys = ['takeoverSeconds', 'autoStopsPerHour', 'autoStopResetMinutes', 'distance', 'speedLoaded', 'speedEmpty', 'positioningTime', 'tripCV', 'clearMinutes', 'rockbreakerShare',
+const switches = ['trafficModel', 'resetPriority']
+const automationKeys = [...switches, 'minGapMetres', 'takeoverSeconds', 'autoStopsPerHour', 'autoStopResetMinutes', 'distance', 'speedLoaded', 'speedEmpty', 'positioningTime', 'tripCV', 'clearMinutes', 'rockbreakerShare',
   'blockMinutes', 'relocationMinutes', 'handoverMinutes', 'dutyShare', 'dutyBlockMinutes', 'drawpoints', 'shiftHours', 'shifts']
 const blastKeys = ['useOversize', 'oversizeSize', 'oversizeFactor']
 const sharedKeys = [...loadingKeys, ...automationKeys, ...blastKeys, ...costKeys]
@@ -86,7 +88,7 @@ export function setupControls() {
     group('Loading', '<div class="fields">' + field('shared', 'loaderModel', { choices: Object.keys(loaderOptions).map(m => [m, m]) }) +
       field('shared', 'bucketIndex', { choices: bucketChoices(defaults.loaderModel.value) }) + loadingKeys.slice(2).map(shared).join('') + '</div>'),
     group('Automation', '<div class="fields">' + automationKeys.map(key => key === 'drawpoints'
-      ? field('shared', key, { choices: [2, 3, 4].map(n => [n, n]) }) : shared(key)).join('') + '</div>')
+      ? field('shared', key, { choices: [2, 3, 4].map(n => [n, n]) }) : switches.includes(key) ? field('shared', key, { choices: [['on', 'On'], ['off', 'Off']] }) : shared(key)).join('') + '</div>')
   ].join('')
   byId('cost-picker').innerHTML = field('cost', 'costCount', { choices: counts.map(n => [n, n]) })
   byId('cost-costCount').value = costCount.value
@@ -101,12 +103,13 @@ export function setupControls() {
 function read(scope, key) {
   const el = byId(fieldId(scope, key))
   if (key === 'loaderModel' || key === 'preset') return el.value
-  if (key === 'useOversize') return el.value === 'on'
+  if (key === 'useOversize' || switches.includes(key)) return el.value === 'on'
   if (el.tagName === 'SELECT') return Number(el.value)
   if (key === 'oversizePercent' && el.value === '') return null
   return el.valueAsNumber / percentScale(key)
 }
 export function inputScenarios(changed) {
+  if (changed?.id === 'shared-trafficModel') byId('shared-resetPriority').value = changed.value
   if (changed?.id === 'shared-loaderModel') byId('shared-bucketIndex').innerHTML = options(bucketChoices(changed.value))
   const shared = Object.fromEntries(sharedKeys.map(key => [key, read('shared', key)]))
   const table = anchorTable.map(({ name }, i) => ({ name, ...Object.fromEntries(anchorKeys.map(key => [key, read('anchor' + i, key)])) }))

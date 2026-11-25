@@ -8,7 +8,7 @@ export const share = fraction => number(100 * fraction) + '%'
 const accounts = [
   ['driving', 'Driving', '#267562'], ['filling', 'Filling', '#304e70'],
   ['waitingOperator', 'Waiting for operator', '#c38742'], ['waitingDrawpoint', 'Waiting for a brow', '#a7bcd0'],
-  ['blocked', 'Blocked by hang-up', '#a65039'], ['stopped', 'Stopped for reset', '#81629a'], ['idle', 'Idle', '#b9c4bd']
+  ['traffic', 'Waiting for traffic', '#80601e'], ['blocked', 'Blocked by hang-up', '#a65039'], ['stopped', 'Stopped for reset', '#81629a'], ['idle', 'Idle', '#b9c4bd']
 ]
 const duties = [accounts[1], ['takeover', 'Takeover', '#567d96'], ['resets', 'Resets', '#81629a'], ['clearing', 'Clearing hang-ups', '#a65039'], ['otherDuties', 'Other duties', '#c38742']]
 
