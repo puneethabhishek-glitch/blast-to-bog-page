@@ -60,6 +60,7 @@ h3 { font-size: 1.05rem }
 .level .machine .stop-timer { fill: #452d55; font: bold 9px system-ui; paint-order: stroke; stroke: white; stroke-width: 2px }
 .traffic { fill: #3f4a54; background: #3f4a54 }
 .stopped { fill: #74548e; background: #74548e }
+.isolated { fill: #8c2f5a; background: #8c2f5a }
 #capacity-map > .muted { margin-top: .4rem }
 #map-progress { font-size: .85rem; color: var(--muted) }
 .map-layout { display: grid; gap: 1.25rem; margin-top: 1rem; align-items: start }

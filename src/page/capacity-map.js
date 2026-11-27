@@ -7,7 +7,7 @@ const reasonLabels = { none: ', even one loader is over the ceiling', operator: 
 function comparison([a, b]) {
   if ([a, b].includes('—')) return 'One or both blasts produce no tonnes across the tested fleets, so their limits cannot be compared.'
   if ([a, b].some(v => String(v) === '0')) return [a, b].map((v, i) => String(v) === '0' ? 'With Blast ' + (i + 1) + ' even one loader keeps the operator above the ceiling.' : 'With Blast ' + (i + 1) + ' the limit is ' + v + (String(v) === '1' ? ' loader.' : ' loaders.')).join(' ')
-  if (a === b) return 'At these inputs both blasts allow the same number of loaders. The blast is not the binding limit here.' +
+  if (a === b) return 'At these inputs both blasts allow the same number of loaders, so the blast changes tonnes and operator workload rather than the loader count.' +
     (a === '6+' ? ' Both still gain at six loaders, the largest fleet tested.' : '')
   return 'Moving from Blast 1 to Blast 2 ' + (parseInt(a) > parseInt(b) ? 'drops' : 'raises') +
     " the operator’s limit from " + a + ' to ' + b + (String(b) === '1' ? ' loader.' : ' loaders.')

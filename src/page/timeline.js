@@ -33,6 +33,7 @@ export function buildTimeline(shift) {
   let queuedJobSeconds = 0
   let previousTime = 0
   let operator = 'idle'
+  let isolation = null, cribOn = false
   let blockedPoints = 0
   const panels = [{ time: 0, operator, queue: 'empty', blockedPoints }]
   const dumps = [{ time: 0, buckets: 0, tonnes: 0 }]
@@ -91,11 +92,17 @@ export function buildTimeline(shift) {
         parked(e.mode)
         break
       case 'handoverStarted': operator = 'shift handover'; break
-      case 'cribStarted': operator = 'crib break'; break
+      case 'cribStarted': cribOn = true; operator = isolation ? isolation + ', operator on crib' : 'crib break'; break
+      case 'isolationStarted':
+        isolation = 'level isolated, ' + (e.cause === 'secondary' ? 'crew charging Brow ' + (point + 1) + ' for a secondary blast' : 'manual recovery on the level')
+        operator = isolation
+        break
+      case 'isolationEnded': isolation = null; operator = cribOn ? 'crib break' : 'idle'; break
+      case 'isolated': parked('isolated'); break
       case 'dutyQueued': queue.push('other duties'); queueChanged = true; break
       case 'dutyStarted': serve('other duties'); operator = 'other duties'; break
+      case 'cribDone': cribOn = false; operator = isolation ?? 'idle'; break
       case 'dutyDone':
-      case 'cribDone':
       case 'handoverDone': operator = 'idle'; break
       case 'queued':
         queue.push(id + 1)

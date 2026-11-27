@@ -89,7 +89,7 @@ export const defaults = {
   oversizeFactor: assumed(1, 'events/100 buckets per percentage point', 'Editable unit multiplier.'),
   oversizeSize: assumed(0.8, 'm'),
   A: assumed(8, 'rock factor', kuzSource), K_kg_per_m3: assumed(0.8, 'kg/m³', 'Assumed. Use your own blast design.'),
-  Q_kg: assumed(25, 'kg', kuzSource), RWS: assumed(100, '% of ANFO strength', kuzSource),
+  Q_kg: assumed(60, 'kg', 'Assumed. About 12 m of ANFO in an 89 mm hole, which gives 0.80 kg/m³ over 2 m × 2.5 m × 15 m.'), RWS: assumed(100, '% of ANFO strength', kuzSource),
   B_m: assumed(2, 'm', kuzSource), S_m: assumed(2.5, 'm', kuzSource),
   D_mm: assumed(89, 'mm', kuzSource), W_m: assumed(0.2, 'm', kuzSource),
   L_m: assumed(12, 'm', kuzSource), H_m: assumed(15, 'm', kuzSource),
@@ -99,7 +99,13 @@ export const defaults = {
   resetPriority: assumed(true, 'on/off', 'Assumed. Operators usually clear a stopped machine before the next fill.'),
   autoStopsPerHour: assumed(0.5, 'stops/trip hour', 'Assumed. Safety scanner stops, path faults and similar.'),
   autoStopResetMinutes: assumed(2, 'min'),
-  clearMinutes: assumed(4, 'min'), rockbreakerShare: assumed(0.30, 'fraction'),
+  clearMinutes: assumed(4, 'min'),
+  secondaryEntryMinutes: assumed(30, 'min', 'Assumed time the level is isolated while a crew charges a hung-up brow for a secondary blast. All loaders on the level stop.'),
+  secondaryWholeLevel: assumed(true, 'on/off', 'Assumed. On: a secondary blast isolates the whole level, because the crew reaches the brow along the shared drive. Off: only the hung-up crosscut is barricaded and the other loaders keep working.'),
+  firingWindows: assumed(true, 'on/off', 'Assumed. Secondary blasts are fired at crib or at shift end, then the brow reopens after re-entry. Off uses the fixed brow block time.'),
+  reEntryMinutes: assumed(30, 'min', 'Assumed wait after firing before the brow can be worked again.'),
+  manualStopShare: assumed(0.10, 'fraction', 'Assumed share of auto-stops that need someone to go in, such as rock on the drive. The level is isolated first.'),
+  manualEntryMinutes: assumed(30, 'min', 'Assumed time the level is isolated for a manual recovery.'), rockbreakerShare: assumed(0.30, 'fraction', 'Assumed share of hang-ups that need secondary breaking, usually a secondary blast in longhole stopes. The brow closes for the block time.'),
   blockMinutes: assumed(30, 'min'), relocationMinutes: assumed(5, 'min'),
   shiftHours: assumed(12, 'h', 'Assumed shift length based on a common WA roster.'),
   handoverMinutes: assumed(15, 'min'), dutyShare: assumed(0.10, 'fraction'),
@@ -161,13 +167,13 @@ export function validateParams(overrides = {}) {
   function check(valid, message, field) {
     if (!valid) issues.push({ severity: 'error', message, field })
   }
-  for (const key of ['trafficModel', 'resetPriority']) check(typeof p[key] === 'boolean', 'Choose on or off.', key)
+  for (const key of ['trafficModel', 'resetPriority', 'firingWindows', 'secondaryWholeLevel']) check(typeof p[key] === 'boolean', 'Choose on or off.', key)
   const positive = { minGapMetres: 'Traffic separation', fillTime: 'Fill time', fillFactor: 'Fill factor', looseDensity: 'Loose density',
     speedLoaded: 'Loaded speed', speedEmpty: 'Empty speed', shiftHours: 'Shift length',
     dutyBlockMinutes: 'Duty block length', inSituDensity: 'In-situ density' }
   const nonnegative = { takeoverSeconds: 'Takeover time', autoStopsPerHour: 'Auto-stop rate', autoStopResetMinutes: 'Reset time',
     distance: 'Tram distance', dumpTime: 'Bucket tip time', dumpManoeuvreSeconds: 'Dump raise and lower time', positioningTime: 'Positioning time',
-    handoverMinutes: 'Handover time', cribMinutes: 'Crib break', clearMinutes: 'Clearing time', blockMinutes: 'Block time',
+    handoverMinutes: 'Handover time', cribMinutes: 'Crib break', secondaryEntryMinutes: 'Secondary blast entry time', reEntryMinutes: 'Re-entry time', manualEntryMinutes: 'Manual entry time', clearMinutes: 'Clearing time', blockMinutes: 'Block time',
     relocationMinutes: 'Relocation time', fillCV: 'Fill time CV', tripCV: 'Trip time CV',
     explosivePrice: 'Explosive price', oversizeSize: 'Oversize size', oversizeFactor: 'Oversize multiplier' }
   for (const [key, name] of Object.entries(positive)) {
@@ -176,7 +182,7 @@ export function validateParams(overrides = {}) {
   for (const [key, name] of Object.entries(nonnegative)) {
     check(Number.isFinite(p[key]) && p[key] >= 0, name + ' must be zero or greater.', key)
   }
-  for (const [key, max] of [['dutyShare', 1], ['operatorCeiling', 1], ['rockbreakerShare', 1], ['hangUpsPer100', 100], ['oversizePercent', 100]]) {
+  for (const [key, max] of [['dutyShare', 1], ['operatorCeiling', 1], ['manualStopShare', 1], ['rockbreakerShare', 1], ['hangUpsPer100', 100], ['oversizePercent', 100]]) {
     if (key === 'oversizePercent' && p[key] == null) continue
     check(Number.isFinite(p[key]) && p[key] >= 0 && p[key] <= max, key + ' must be between 0 and ' + max + '.', key)
   }
@@ -194,5 +200,10 @@ export function validateParams(overrides = {}) {
     field: 'looseDensity', severity: 'warning', message: 'Loose density exceeds the selected bucket’s maximum material density of ' +
       p.maxDensityKgM3 + ' kg/m³.'
   })
+  if (p.fragmentationMode === 'kuzRam' && p.B_m > 0 && p.S_m > 0 && p.H_m > 0 && p.Q_kg > 0) {
+    const implied = p.Q_kg / (p.B_m * p.S_m * p.H_m)
+    if (Math.abs(implied - p.K_kg_per_m3) > 0.25 * p.K_kg_per_m3) issues.push({ field: 'K_kg_per_m3', severity: 'warning',
+      message: 'Explosive per hole over burden × spacing × height gives ' + implied.toFixed(2) + ' kg/m³, which does not match this powder factor.' })
+  }
   return issues
 }

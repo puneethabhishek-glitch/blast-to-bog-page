@@ -45,6 +45,8 @@ export function trafficController(layout, gap, api) {
   const holds = Array.from({ length: brows + 1 }, () => new Map())
   // Lanes with a loader waiting for each junction. Only these are woken.
   const waiters = Array.from({ length: brows + 1 }, () => new Set())
+  // While the level is isolated no loader may start or continue a move.
+  let halted = false
 
   function isJunction(node) { return node <= brows }
   // Time when the junction is next clear for l. Infinity means another loader
@@ -88,6 +90,7 @@ export function trafficController(layout, gap, api) {
     l.departing = l.node
   }
   function waitMode(l) {
+    if (halted) return 'isolated'
     const to = l.toward
     return to > brows && !api.closed(to - brows - 1) && berth[to - brows - 1] !== null && berth[to - brows - 1] !== l ? 'waitingDrawpoint' : 'traffic'
   }
@@ -114,7 +117,7 @@ export function trafficController(layout, gap, api) {
     // Most segments are uncontested. Enter immediately unless another event at
     // this timestamp could submit a competing request (loaded priority).
     const open = to <= brows || (!api.closed(to - brows - 1) && berth[to - brows - 1] === null)
-    if (!lane.active.length && !lane.queue.length && open && !api.simultaneous?.(now) && canLeave(l, now)) {
+    if (!halted && !lane.active.length && !lane.queue.length && open && !api.simultaneous?.(now) && canLeave(l, now)) {
       if (to > brows) berth[to - brows - 1] = l
       takeDeparture(l)
       lane.last = now
@@ -190,7 +193,7 @@ export function trafficController(layout, gap, api) {
       }
     }
     let next = Infinity
-    if (lane.queue.length && !lane.active.some(l => l.state === 'stopped')) {
+    if (lane.queue.length && !halted && !lane.active.some(l => l.state === 'stopped')) {
       // Keep FIFO within a priority class. A waiting loaded move drains an
       // opposing empty platoon before any more empties can enter.
       // A loaded loader that waits only for its junction to clear keeps its
@@ -225,7 +228,7 @@ export function trafficController(layout, gap, api) {
         }
       }
       const mode = waitMode(l)
-      if (l.state !== mode && (l.state === 'traffic' || l.state === 'waitingDrawpoint')) parked(l, mode)
+      if (l.state !== mode && (l.state === 'traffic' || l.state === 'waitingDrawpoint' || l.state === 'isolated')) parked(l, mode)
     }
     let front
     for (const l of lane.active) {
@@ -273,6 +276,24 @@ export function trafficController(layout, gap, api) {
   return {
     start, tick, parked,
     occupy(l) { berth[l.point] = l },
+    // Stop every moving loader where it is. Each stop then needs an operator reset.
+    halt(now) {
+      halted = true
+      for (const lane of lanes) {
+        if (!lane) continue
+        for (const l of lane.active) if (l.state !== 'stopped') l.stopLeft = 0
+        if (lane.active.length) wake(lane, now)
+        for (const l of lane.queue) if (l.state !== 'isolated') parked(l, 'isolated')
+      }
+    },
+    unhalt(now) {
+      halted = false
+      for (const lane of lanes) {
+        if (!lane) continue
+        for (const l of lane.queue) if (l.state === 'isolated') parked(l, waitMode(l))
+        if (lane.queue.length || lane.active.length) wake(lane, now)
+      }
+    },
     refresh(point, now) { wake(lanes[brows + point + 1], now) },
     resume(l, now) {
       // A stopped vehicle has zero velocity. Apply elapsed time to its

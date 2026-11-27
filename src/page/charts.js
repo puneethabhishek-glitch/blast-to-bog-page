@@ -8,7 +8,7 @@ export const share = fraction => number(100 * fraction) + '%'
 const accounts = [
   ['driving', 'Driving', '#267562'], ['filling', 'Filling', '#304e70'],
   ['waitingOperator', 'Waiting for operator', '#c38742'], ['waitingDrawpoint', 'Waiting for a brow', '#a7bcd0'],
-  ['traffic', 'Waiting for traffic', '#3f4a54'], ['blocked', 'Blocked by hang-up', '#a65039'], ['stopped', 'Stopped for reset', '#81629a'], ['idle', 'Idle', '#b9c4bd']
+  ['traffic', 'Waiting for traffic', '#3f4a54'], ['blocked', 'Blocked by hang-up', '#a65039'], ['stopped', 'Stopped for reset', '#81629a'], ['isolated', 'Stopped, level isolated', '#8c2f5a'], ['idle', 'Idle', '#b9c4bd']
 ]
 const duties = [accounts[1], ['takeover', 'Takeover', '#567d96'], ['resets', 'Resets', '#81629a'], ['clearing', 'Clearing hang-ups', '#a65039'], ['otherDuties', 'Other duties', '#c38742']]
 
@@ -167,7 +167,12 @@ export const seconds = value => value == null ? '—' : value < 90 ? number(valu
 export function reasonText(results, limit, reason, ceiling) {
   const next = results.find(r => r.N === limit + 1)
   if (reason === 'none') return `Even one loader keeps the operator above the ${share(ceiling)} ceiling`
-  if (reason === 'operator') return `A ${ordinal(limit + 1)} loader would keep the operator ${share(next.operatorBusyShare)} busy, above the ${share(ceiling)} ceiling`
+  if (reason === 'operator') {
+    // Show a decimal when whole percentages would hide that the share is above the ceiling.
+    const busy = next.operatorBusyShare
+    const shown = Math.round(100 * busy) <= Math.round(100 * ceiling) ? number(100 * busy, 1) + '%' : share(busy)
+    return `A ${ordinal(limit + 1)} loader would keep the operator ${shown} busy, above the ${share(ceiling)} ceiling`
+  }
   if (reason === 'brows') return 'Every open brow is in use, so another loader mostly waits for a brow'
   return 'Another loader adds under 10% to mean tonnes'
 }

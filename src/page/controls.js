@@ -10,7 +10,8 @@ export const names = {
   trafficModel: 'Single lane traffic', minGapMetres: 'Minimum separation', resetPriority: 'Prioritise resets',
   takeoverSeconds: 'Remote takeover time', autoStopsPerHour: 'Auto-stops', autoStopResetMinutes: 'Reset time',
   tripCV: 'Trip time variability', distance: 'One-way tram distance', speedLoaded: 'Loaded speed', speedEmpty: 'Empty speed',
-  positioningTime: 'Positioning time', clearMinutes: 'Hang-up clearing', rockbreakerShare: 'Rockbreaker share',
+  positioningTime: 'Positioning time', clearMinutes: 'Hang-up clearing', rockbreakerShare: 'Secondary blast share', secondaryEntryMinutes: 'Secondary blast entry', firingWindows: 'Fire at crib and shift end', secondaryWholeLevel: 'Secondary blast isolates level', reEntryMinutes: 'Re-entry after firing',
+  manualStopShare: 'Stops needing entry', manualEntryMinutes: 'Manual entry time',
   blockMinutes: 'Brow block time', relocationMinutes: 'Relocation time', handoverMinutes: 'Handover gap', cribMinutes: 'Crib break', operatorCeiling: 'Operator busy ceiling',
   dutyShare: 'Other duties share', dutyBlockMinutes: 'Duty block length', drawpoints: 'Open brows', shiftHours: 'Shift length',
   shifts: 'Shifts simulated', explosivePrice: 'Explosive price', inSituDensity: 'In-situ density',
@@ -19,11 +20,11 @@ export const names = {
 }
 const roughKeys = ['A', 'Q_kg', 'RWS', 'B_m', 'S_m', 'D_mm', 'W_m', 'L_m', 'H_m']
 export const costKeys = ['explosivePrice', 'inSituDensity']
-const percentKeys = ['fillCV', 'tripCV', 'rockbreakerShare', 'dutyShare', 'operatorCeiling']
+const percentKeys = ['fillCV', 'tripCV', 'rockbreakerShare', 'dutyShare', 'operatorCeiling', 'manualStopShare']
 const anchorKeys = ['x50', 'fillTime', 'fillFactor', 'hangUpsPer100']
 const loadingKeys = ['loaderModel', 'bucketIndex', 'looseDensity', 'fillCV']
-const switches = ['trafficModel', 'resetPriority']
-const automationKeys = [...switches, 'minGapMetres', 'takeoverSeconds', 'autoStopsPerHour', 'autoStopResetMinutes', 'distance', 'speedLoaded', 'speedEmpty', 'positioningTime', 'tripCV', 'clearMinutes', 'rockbreakerShare',
+const switches = ['trafficModel', 'resetPriority', 'firingWindows', 'secondaryWholeLevel']
+const automationKeys = [...switches, 'minGapMetres', 'takeoverSeconds', 'autoStopsPerHour', 'autoStopResetMinutes', 'distance', 'speedLoaded', 'speedEmpty', 'positioningTime', 'tripCV', 'clearMinutes', 'rockbreakerShare', 'secondaryEntryMinutes', 'reEntryMinutes', 'manualStopShare', 'manualEntryMinutes',
   'blockMinutes', 'relocationMinutes', 'handoverMinutes', 'cribMinutes', 'operatorCeiling', 'dutyShare', 'dutyBlockMinutes', 'drawpoints', 'shiftHours', 'shifts']
 const blastKeys = ['useOversize', 'oversizeSize', 'oversizeFactor']
 const sharedKeys = [...loadingKeys, ...automationKeys, ...blastKeys, ...costKeys]

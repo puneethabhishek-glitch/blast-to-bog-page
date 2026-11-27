@@ -4,7 +4,7 @@ import { autonomousTime, tonnesPerBucket } from './loader.js'
 import { roadLayout, trafficController } from './road.js'
 import { EventQueue } from './event-queue.js'
 
-const emptyTimes = () => ({ filling: 0, driving: 0, waitingOperator: 0, waitingDrawpoint: 0, blocked: 0, traffic: 0, stopped: 0, idle: 0 })
+const emptyTimes = () => ({ filling: 0, driving: 0, waitingOperator: 0, waitingDrawpoint: 0, blocked: 0, traffic: 0, stopped: 0, isolated: 0, idle: 0 })
 const timeAccounts = Object.keys(emptyTimes())
 const emptyOperator = () => ({ filling: 0, clearing: 0, otherDuties: 0, takeover: 0, resets: 0 })
 const operatorAccounts = Object.keys(emptyOperator())
@@ -59,6 +59,14 @@ function shift(config, N, seed, record) {
   // One crib break at mid shift. The operator finishes the current task first.
   let cribDue = false
   let cribTaken = 0
+  // Level isolations for people entering: secondary blasting or a manual recovery.
+  const isolations = []
+  let isolating = false
+  let isolatedTime = 0
+  let isolationEndsAt = 0
+  let isolationStartedAt = 0
+  let cribActive = false
+  let overlap = 0 // Crib taken while the level was already isolated counts once.
   let now = 0
   let hangUps = 0
   let rockbreakers = 0
@@ -71,6 +79,11 @@ function shift(config, N, seed, record) {
   function stopLoader(l) {
     state(l, 'stopped')
     log('autoStop', l, null)
+    // Some stops need someone to go in, which isolates the level first.
+    if (road && !isolating && p.manualStopShare > 0 && p.manualEntryMinutes > 0 && rng() < p.manualStopShare) {
+      isolations.push({ cause: 'manual', minutes: p.manualEntryMinutes, point: null })
+      log('isolationRequested', l, null, { cause: 'manual' })
+    }
     if (p.resetPriority) {
       const firstFill = jobs.findIndex(job => job?.state !== 'stopped')
       jobs.splice(firstFill < 0 ? jobs.length : firstFill, 0, l)
@@ -136,6 +149,10 @@ function shift(config, N, seed, record) {
     jobs.push(l)
     l.queuedAt = now
     log('queued', l)
+    if (isolating) {
+      state(l, 'isolated')
+      log('isolated', l)
+    }
   }
   function relocate(l, target) {
     if (road) state(l, 'blocked')
@@ -216,14 +233,38 @@ function shift(config, N, seed, record) {
     if (stopAt < l.returnsAt) schedule(stopAt, 'autoStop', l)
     else schedule(l.returnsAt, 'returned', l)
   }
+  function startIsolation() {
+    const { cause, minutes, point } = isolations.shift()
+    busy = true
+    isolating = true
+    const duration = Math.min(minutes * 60, end - now)
+    isolatedTime += duration
+    isolationEndsAt = now + minutes * 60
+    isolationStartedAt = now
+    log('isolationStarted', null, point, { cause, until: now + minutes * 60 })
+    road.halt(now)
+    // Loaders waiting for the operator stay where they are. A loader part way through a
+    // tip or positioning finishes it, then waits at its next move.
+    for (const l of loaders) if (l.state === 'waitingOperator') {
+      state(l, 'isolated')
+      log('isolated', l)
+    }
+    schedule(now + minutes * 60, 'isolationDone')
+  }
+  function startCrib() {
+    cribActive = true
+    cribTaken = Math.min(p.cribMinutes * 60, end - now)
+    if (isolating) overlap += Math.max(0, Math.min(isolationEndsAt, now + p.cribMinutes * 60, end) - now)
+    log('cribStarted')
+    schedule(now + p.cribMinutes * 60, 'cribDone')
+  }
   function dispatch() {
     if (busy) return
+    if (isolations.length) return startIsolation()
     if (cribDue) {
       cribDue = false
       busy = true
-      cribTaken = Math.min(p.cribMinutes * 60, end - now)
-      log('cribStarted')
-      schedule(now + p.cribMinutes * 60, 'cribDone')
+      startCrib()
       return
     }
     if (!jobs.length) return
@@ -291,12 +332,30 @@ function shift(config, N, seed, record) {
       case 'approached':
         join(l)
         break
+      case 'isolationDone':
+        isolating = false
+        if (!cribActive) busy = false
+        log('isolationEnded')
+        // Nobody can be served while the level is isolated, so that time is not an operator wait.
+        for (const l of jobs) if (l) l.queuedAt += now - Math.max(l.queuedAt, isolationStartedAt)
+        for (const l of loaders) if (l.state === 'isolated' && jobs.includes(l)) {
+          state(l, 'waitingOperator')
+          log('waitingOperator', l)
+        }
+        road.unhalt(now)
+        break
       case 'crib':
-        cribDue = true
         log('cribDue')
+        // The operator takes crib while the level is isolated, as nothing can be filled anyway.
+        if (isolating) startCrib()
+        else cribDue = true
+        break
+      case 'cribDone':
+        cribActive = false
+        if (!isolating) busy = false
+        log(type)
         break
       case 'handoverDone':
-      case 'cribDone':
       case 'dutyDone':
         busy = false
         log(type)
@@ -315,8 +374,7 @@ function shift(config, N, seed, record) {
       case 'cleared':
         if (rng() >= p.rockbreakerShare) {
           log('cleared', l)
-          if (p.takeoverSeconds) takeControl(l, 'fillAfterClear')
-          else startFill(l) // Retain the operator, with no new hang-up draw.
+          startFill(l) // The operator keeps control from clearing straight into the fill, with no new hang-up draw.
           break
         }
         rockbreakers++
@@ -324,7 +382,15 @@ function shift(config, N, seed, record) {
         blocked[l.point] = true
         log('rockbreaker', l)
         if (road) road.refresh(l.point, now)
-        schedule(now + p.blockMinutes * 60, 'unblocked', null, l.point)
+        if (p.firingWindows) {
+          // Fired at the next firing window (crib or shift end), then re-entry.
+          const firing = now < end / 2 ? end / 2 : end
+          schedule(firing + p.reEntryMinutes * 60, 'unblocked', null, l.point)
+        } else schedule(now + p.blockMinutes * 60, 'unblocked', null, l.point)
+        if (road && p.secondaryWholeLevel && p.secondaryEntryMinutes > 0) {
+          isolations.push({ cause: 'secondary', minutes: p.secondaryEntryMinutes, point: l.point })
+          log('isolationRequested', l, l.point, { cause: 'secondary' })
+        }
         if (freeCount) {
           relocate(l, firstFree(l.home))
           if (road) refreshBrowQueue()
@@ -416,7 +482,7 @@ function shift(config, N, seed, record) {
     l.times[l.state] += end - l.since
     return { id: l.id, buckets: l.buckets, tonnes: l.buckets * payload, ...l.times }
   })
-  return { ...(road && record ? { layout: config.layout } : {}), ...(p.resetPriority ? { resetPriority: true } : {}), loaders: totals, operator, waits, workingSeconds: end - Math.min(end, p.handoverMinutes * 60) - cribTaken, hangUps, rockbreakers, buckets, tonnes: buckets * payload, eventLog }
+  return { ...(road && record ? { layout: config.layout } : {}), ...(p.resetPriority ? { resetPriority: true } : {}), loaders: totals, operator, waits, workingSeconds: Math.max(0, end - Math.min(end, p.handoverMinutes * 60) - cribTaken - isolatedTime + overlap), isolatedSeconds: isolatedTime, hangUps, rockbreakers, buckets, tonnes: buckets * payload, eventLog }
 }
 
 /** Replay logs use zero-based IDs and seconds since shift start. */
