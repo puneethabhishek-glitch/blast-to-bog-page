@@ -193,8 +193,10 @@ export function setupReplay() {
       hangUps = plans.flatMap(p => p.timeline.hangUps).sort((a, b) => a.time - b.time)
       byId('transport').disabled = false
       const brows = params[0].drawpoints, spare = brows - count
-      const over = series.map((s, i) => s.limit != null && count > s.limit ? 'Blast ' + (i + 1) + ' (limit ' + s.limit + ')' : null).filter(Boolean)
-      takeaway.textContent += over.length ? ' This fleet is above the operator limit for ' + over.join(' and ') + ', so watch the queue grow.' : ''
+      // Only a fleet past the busy ceiling is called out. Crossing it means less spare time, not a queue that grows without end.
+      const over = series.map((s, i) => s.limit != null && count > s.limit && ['operator', 'none'].includes(s.reason) ? i : null).filter(i => i !== null)
+      takeaway.textContent += over.length ? ' This fleet exceeds the assumed workload ceiling for ' + (over.length === 2 ? 'both blasts' : 'Blast ' + (over[0] + 1)) +
+        '. Watch how long a stopped loader waits when the operator is already filling another bucket.' : ''
       byId('replay-note').textContent = 'Schematic plan, not to a real level. Passing bays at every junction and at the dump are assumed. This replays one simulated shift. The chart numbers above come from ' + number(params[0].shifts) + ' shifts.' +
         (spare > 0 ? ' Each loader has its own home brow, so with ' + count + (count === 1 ? ' loader ' : ' loaders ') +
           (spare === 1 ? 'one brow is spare. It is' : spare + ' brows are spare. They are') + ' used only when another brow closes for a rockbreaker.' : '')
